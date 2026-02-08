@@ -199,7 +199,7 @@ function parseAgenticResponse(content: string): { steps: AgentStep[]; answer: st
 }
 
 // Collapsible reasoning section
-function ReasoningSteps({ steps, defaultExpanded = false }: { steps: AgentStep[]; defaultExpanded?: boolean }) {
+function ReasoningSteps({ steps, defaultExpanded = false, isStreaming = false }: { steps: AgentStep[]; defaultExpanded?: boolean; isStreaming?: boolean }) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   if (steps.length === 0) return null;
@@ -217,8 +217,13 @@ function ReasoningSteps({ steps, defaultExpanded = false }: { steps: AgentStep[]
         ) : (
           <ChevronRight className="w-4 h-4" />
         )}
-        <Brain className="w-4 h-4 text-brand-primary" />
-        <span>Reasoning ({thinkingSteps.length} steps)</span>
+        {isStreaming ? (
+          <Loader2 className="w-4 h-4 text-brand-primary animate-spin" />
+        ) : (
+          <Brain className="w-4 h-4 text-brand-primary" />
+        )}
+        <span>Reasoning ({thinkingSteps.length} step{thinkingSteps.length !== 1 ? "s" : ""})</span>
+        {isStreaming && <span className="text-brand-primary/70 text-xs">in progress...</span>}
       </button>
 
       {isExpanded && (
@@ -226,6 +231,12 @@ function ReasoningSteps({ steps, defaultExpanded = false }: { steps: AgentStep[]
           {thinkingSteps.map((step, i) => (
             <StepDisplay key={i} step={step} index={i + 1} />
           ))}
+          {isStreaming && (
+            <div className="flex items-center gap-2 text-sm text-text-muted">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>Processing...</span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -362,15 +373,17 @@ function StreamingIndicator() {
 export function ChatMessage({ message, isStreaming = false, showSources = true, onSourceClick }: ChatMessageProps) {
   const isUser = message.role === "user";
   
-  // Parse agentic response if it's an assistant message - BUT only when not streaming
+  // Always parse agentic response for assistant messages - even during streaming
+  // This gives us nicely formatted steps that update live
   const { steps, answer, sources } = useMemo(() => {
     if (isUser) return { steps: [], answer: message.content, sources: [] };
-    // Don't parse during streaming - show raw content instead
-    if (isStreaming) return { steps: [], answer: message.content, sources: [] };
     return parseAgenticResponse(message.content);
-  }, [message.content, isUser, isStreaming]);
+  }, [message.content, isUser]);
 
   const showTypingIndicator = isStreaming && !message.content;
+  
+  // During streaming, check if we have any parsed steps to show formatted view
+  const hasAgenticContent = steps.length > 0;
 
   // User message - simple bubble on right
   if (isUser) {
@@ -403,8 +416,8 @@ export function ChatMessage({ message, isStreaming = false, showSources = true, 
         <div className="rounded-2xl rounded-tl-sm px-4 py-3 bg-bg-surface border border-border-subtle shadow-sm">
           {showTypingIndicator ? (
             <StreamingIndicator />
-          ) : isStreaming ? (
-            // During streaming, show raw content with cursor
+          ) : isStreaming && !hasAgenticContent ? (
+            // During streaming without agentic markers, show raw content with cursor
             <div className="prose prose-sm prose-invert max-w-none">
               <div className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
                 {message.content}
@@ -413,14 +426,20 @@ export function ChatMessage({ message, isStreaming = false, showSources = true, 
             </div>
           ) : (
             <>
-              {/* Collapsible reasoning steps */}
+              {/* Collapsible reasoning steps - shown both during and after streaming */}
               {steps.length > 0 && (
-                <ReasoningSteps steps={steps} defaultExpanded={false} />
+                <ReasoningSteps steps={steps} defaultExpanded={false} isStreaming={isStreaming} />
               )}
 
               {/* Main answer */}
               {answer ? (
-                <RenderAnswer content={answer} isStreaming={false} />
+                <RenderAnswer content={answer} isStreaming={isStreaming} />
+              ) : isStreaming && steps.length > 0 ? (
+                // During streaming with steps but no answer yet
+                <div className="flex items-center gap-2 text-text-muted text-sm mt-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Generating answer...</span>
+                </div>
               ) : steps.length > 0 ? (
                 <div className="text-text-secondary text-sm italic">
                   The investigation completed with {steps.length} steps but no specific answer was generated. 
