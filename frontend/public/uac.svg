@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Background -->
+  <rect width="64" height="64" rx="14" fill="#0f172a"></rect>
+
+  <!-- Shield -->
+  <path d="M32 8
+       L48 14
+       V30
+       C48 42 32 52 32 52
+       C32 52 16 42 16 30
+       V14
+       Z" fill="#1e293b" stroke="#38bdf8" stroke-width="2"></path>
+
+  <!-- AI core -->
+  <circle cx="32" cy="28" r="6" fill="#38bdf8"></circle>
+
+  <!-- Neural lines -->
+  <line x1="32" y1="18" x2="32" y2="10" stroke="#38bdf8" stroke-width="2"></line>
+  <line x1="22" y1="28" x2="14" y2="28" stroke="#38bdf8" stroke-width="2"></line>
+  <line x1="42" y1="28" x2="50" y2="28" stroke="#38bdf8" stroke-width="2"></line>
+</svg>

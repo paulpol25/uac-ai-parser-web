@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS Variables for non-Tailwind contexts */
+:root {
+  /* Brand */
+  --brand-primary: #00d9ff;
+  --brand-primary-hover: #33e1ff;
+  --brand-primary-muted: rgba(0, 217, 255, 0.2);
+
+  /* Semantic */
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #6366f1;
+
+  /* Backgrounds */
+  --bg-base: #0a0e14;
+  --bg-surface: #0f1419;
+  --bg-elevated: #1a1f26;
+  --bg-hover: #242b33;
+
+  /* Borders */
+  --border-subtle: #1e2530;
+  --border-default: #2d3640;
+  --border-strong: #3d4650;
+
+  /* Text */
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+  --text-inverse: #0a0e14;
+
+  /* Typography */
+  --font-heading: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+
+  /* Animation */
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-snappy: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Base styles */
+html {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-bg-base text-text-primary font-body antialiased;
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-bg-base;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-default);
+  @apply rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-border-strong);
+}
+
+/* Focus styles */
+:focus-visible {
+  @apply outline-2 outline-brand-primary outline-offset-2;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Code blocks */
+pre,
+code {
+  @apply font-mono;
+}
+
+/* Selection */
+::selection {
+  @apply bg-brand-primary/30 text-text-primary;
+}
+
+/* Utility classes */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .glow-primary {
+    box-shadow: 0 0 20px -5px var(--brand-primary);
+  }
+
+  .glow-error {
+    box-shadow: 0 0 20px -5px var(--color-error);
+  }
+
+  .glow-success {
+    box-shadow: 0 0 20px -5px var(--color-success);
+  }
+}

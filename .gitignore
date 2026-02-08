@@ -205,3 +205,65 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+# ===== UAC AI Project Specific =====
+
+# Application data directory
+.uac-ai/
+
+# Uploaded files and extracts
+uploads/
+backend/uploads/
+
+# ChromaDB data
+chroma_data/
+chroma/
+docs_implementation/
+skills/
+
+# SQLite database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Environment and config
+.env
+.env.local
+.env.*.local
+config.local.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Frontend build
+frontend/dist/
+frontend/node_modules/
+
+# Backend
+backend/.venv/
+backend/__pycache__/
+backend/*.egg-info/
+
+# Logs
+*.log
+logs/
+
+# Test artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Temporary files
+*.tmp
+*.temp
+.temp/
+tmp/

@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  uac-ai-parser:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persistent data storage
+      - uac-ai-data:/app/data
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - FLASK_ENV=production
+      - FLASK_DEBUG=false
+      - CORS_ORIGINS=http://localhost:5000,http://localhost:3000
+      # Use host.docker.internal to connect to Ollama on the host machine
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1}
+      # Optional: Configure cloud LLM providers
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    extra_hosts:
+      # Enable host.docker.internal on Linux
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  uac-ai-data:
+    driver: local
