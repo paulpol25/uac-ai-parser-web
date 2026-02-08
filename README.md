@@ -130,7 +130,8 @@ cd uac-ai-parser-web
 
 # Pull recommended models
 ollama pull llama3.1        # Good balance of speed and quality
-ollama pull deepseek-r1:7b  # Best for complex reasoning (recommended)
+ollama pull deepseek-r1:7b  # Best for complex reasoning 
+ollama pull mistral:latest # Best local model overall (recommended)
 ```
 
 ### 3. Set Up the Backend
