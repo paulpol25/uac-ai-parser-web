@@ -5,19 +5,36 @@ Uses tiered storage architecture per RAG_DESIGN.md:
 - Tier 0: Raw archives remain in filesystem (cold storage)
 - Tier 1: Parsed chunks stored in SQLite
 - Tier 2: Embeddings in ChromaDB
+
+Understands the UAC output directory structure:
+- [root]/ — raw collected files (var/log, etc, home dirs)
+- live_response/ — command outputs (process, network, user, system, hardware, software)
+- bodyfile/ — filesystem timeline (TSK bodyfile format)
+- hash_executables/ — file hashes (md5, sha1, sha256)
+- memory_dump/ — volatile memory (if collected)
+- uac.log — acquisition metadata
 """
+import re
 import tarfile
 import zipfile
 import hashlib
+import logging
 from pathlib import Path
 from typing import Any, Callable
 from datetime import datetime
 
-from app.models import db, Session, Investigation
+from app.models import db, Session, Investigation, FileHash
 from app.services.tiered_rag_service import TieredRAGService
+
+logger = logging.getLogger(__name__)
 
 # Progress callback type: (step: str, progress: int, detail: str) -> None
 ProgressCallback = Callable[[str, int, str], None]
+
+# UAC archive filename pattern: uac-<hostname>-<os>-<timestamp>.tar.gz
+UAC_FILENAME_PATTERN = re.compile(
+    r"uac-(?P<hostname>[^-]+)-(?P<os>[^-]+)-(?P<timestamp>\d{8,14})"
+)
 
 
 class ParserService:
@@ -94,7 +111,7 @@ class ParserService:
             
             report("sysinfo", 25, "Extracting system information...")
             # Extract system info from UAC
-            system_info = self._extract_system_info(extract_dir)
+            system_info = self._extract_system_info(extract_dir, file_path.name)
             session.hostname = system_info.get("hostname")
             session.os_type = system_info.get("os_type")
             session.collection_date = system_info.get("collection_date")
@@ -103,6 +120,11 @@ class ParserService:
             # Parse artifacts for summary
             artifacts = self._parse_artifacts(extract_dir)
             session.total_artifacts = len(artifacts)
+            
+            # Parse hash executables if present
+            report("hashes", 33, "Parsing file hashes...")
+            db.session.commit()  # commit session first to get session.id
+            hash_count = self._parse_hash_executables(extract_dir, session.id)
             
             report("ingest", 35, f"Indexing {len(artifacts)} files for RAG...")
             # Ingest into tiered RAG storage (expensive operation - done once)
@@ -210,64 +232,269 @@ class ParserService:
         with zipfile.ZipFile(file_path, "r") as zip_ref:
             zip_ref.extractall(extract_dir)
     
-    def _extract_system_info(self, extract_dir: Path) -> dict:
-        """Extract system information from UAC artifacts."""
+    def _extract_system_info(self, extract_dir: Path, original_filename: str = "") -> dict:
+        """
+        Extract system information from UAC artifacts.
+        
+        Sources (in priority order):
+        1. uac.log — acquisition log with profile, start/end times, UAC version
+        2. Hostname/OS files from collected artifacts
+        3. UAC archive filename pattern: uac-<hostname>-<os>-<timestamp>
+        """
         info = {
             "hostname": None,
             "os_type": None,
-            "collection_date": None
+            "collection_date": None,
+            "uac_version": None,
+            "uac_profile": None,
+            "collection_start": None,
+            "collection_end": None,
         }
         
-        # Try to find hostname
-        hostname_files = [
-            extract_dir / "live_response" / "system" / "hostname.txt",
-            extract_dir / "etc" / "hostname",
-        ]
-        for hf in hostname_files:
-            if hf.exists():
-                try:
-                    info["hostname"] = hf.read_text().strip().split('\n')[0]
+        # 1. Parse uac.log for acquisition metadata
+        uac_log = self._find_file(extract_dir, "uac.log")
+        if uac_log:
+            info.update(self._parse_uac_log(uac_log))
+        
+        # 2. Try hostname from collected files
+        if not info["hostname"]:
+            for rel in [
+                "live_response/system/hostname.txt",
+                "live_response/system/uname.txt",
+            ]:
+                f = self._find_file(extract_dir, rel)
+                if f:
+                    try:
+                        text = f.read_text(errors="replace").strip().split("\n")[0]
+                        if text:
+                            info["hostname"] = text.split()[0] if "uname" in str(f) else text
+                            break
+                    except Exception:
+                        pass
+            # etc/hostname under the collected root
+            if not info["hostname"]:
+                for p in extract_dir.rglob("etc/hostname"):
+                    try:
+                        info["hostname"] = p.read_text(errors="replace").strip().split("\n")[0]
+                        break
+                    except Exception:
+                        pass
+        
+        # 3. Detect OS type from collected artifacts
+        if not info["os_type"]:
+            os_indicators = [
+                ("etc/os-release", "linux"),
+                ("etc/redhat-release", "linux"),
+                ("etc/debian_version", "linux"),
+                ("System/Library", "macos"),
+                ("private/var", "macos"),
+                ("live_response/system/uname.txt", "unix"),
+            ]
+            for pattern, os_type in os_indicators:
+                found = list(extract_dir.rglob(pattern))
+                if found:
+                    info["os_type"] = os_type
                     break
-                except Exception:
-                    pass
         
-        # Try to find OS type
-        os_files = [
-            (extract_dir / "etc" / "os-release", "linux"),
-            (extract_dir / "etc" / "redhat-release", "linux"),
-            (extract_dir / "live_response" / "system" / "uname.txt", "linux"),
-        ]
-        for of, os_type in os_files:
-            if of.exists():
-                info["os_type"] = os_type
-                break
+        # 4. Fall back to filename parsing
+        if original_filename:
+            match = UAC_FILENAME_PATTERN.search(original_filename)
+            if match:
+                if not info["hostname"]:
+                    info["hostname"] = match.group("hostname")
+                if not info["os_type"]:
+                    info["os_type"] = match.group("os")
+                if not info["collection_date"]:
+                    ts = match.group("timestamp")
+                    try:
+                        if len(ts) >= 14:
+                            info["collection_date"] = datetime.strptime(ts[:14], "%Y%m%d%H%M%S")
+                        elif len(ts) >= 8:
+                            info["collection_date"] = datetime.strptime(ts[:8], "%Y%m%d")
+                    except ValueError:
+                        pass
         
-        # Collection date from UAC metadata if available
-        uac_log = extract_dir / "uac.log"
-        if uac_log.exists():
+        # Use uac.log creation time as last resort for collection_date
+        if not info["collection_date"] and uac_log:
             try:
-                stat = uac_log.stat()
-                info["collection_date"] = datetime.fromtimestamp(stat.st_mtime)
+                info["collection_date"] = datetime.fromtimestamp(uac_log.stat().st_mtime)
             except Exception:
                 pass
         
         return info
     
+    def _parse_uac_log(self, uac_log: Path) -> dict:
+        """Parse uac.log for acquisition metadata."""
+        result = {}
+        try:
+            content = uac_log.read_text(errors="replace")
+            
+            # UAC version
+            m = re.search(r"UAC\s+(?:version\s+)?(\d+\.\d+[\.\d]*)", content, re.I)
+            if m:
+                result["uac_version"] = m.group(1)
+            
+            # Profile used
+            m = re.search(r"(?:profile|using)\s*[:=]\s*(\S+)", content, re.I)
+            if m:
+                result["uac_profile"] = m.group(1)
+            
+            # Hostname from uac.log
+            m = re.search(r"hostname\s*[:=]\s*(\S+)", content, re.I)
+            if m:
+                result["hostname"] = m.group(1)
+            
+            # Start/end timestamps
+            for pattern, key in [
+                (r"(?:start|started|begin)\s*(?:date|time)?\s*[:=]\s*(.+)", "collection_start"),
+                (r"(?:end|finished|complete)\s*(?:date|time)?\s*[:=]\s*(.+)", "collection_end"),
+            ]:
+                m = re.search(pattern, content, re.I)
+                if m:
+                    ts_str = m.group(1).strip()
+                    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%a %b %d %H:%M:%S %Z %Y"]:
+                        try:
+                            result[key] = datetime.strptime(ts_str[:19], fmt[:len(ts_str)])
+                            break
+                        except ValueError:
+                            continue
+            
+            # Try to extract collection_date from start time
+            if "collection_start" in result and "collection_date" not in result:
+                result["collection_date"] = result["collection_start"]
+                
+        except Exception as e:
+            logger.warning(f"Failed to parse uac.log: {e}")
+        
+        return result
+    
+    def _find_file(self, extract_dir: Path, relative_path: str) -> Path | None:
+        """
+        Find a file in the extract directory, handling nested UAC directories.
+        UAC archives sometimes have a top-level folder inside.
+        """
+        # Direct path
+        direct = extract_dir / relative_path
+        if direct.exists():
+            return direct
+        
+        # One level nested (common in UAC archives)
+        for child in extract_dir.iterdir():
+            if child.is_dir():
+                nested = child / relative_path
+                if nested.exists():
+                    return nested
+        
+        return None
+    
+    def _parse_hash_executables(self, extract_dir: Path, session_id: int) -> int:
+        """
+        Parse hash files from UAC hash_executables directory.
+        
+        UAC generates hash files like:
+        - hash_executables/md5.txt
+        - hash_executables/sha1.txt  
+        - hash_executables/sha256.txt
+        
+        Format: <hash>  <filepath>
+        
+        Returns number of hash records created.
+        """
+        count = 0
+        hash_dirs = list(extract_dir.rglob("hash_executables"))
+        
+        hash_type_map = {
+            "md5": "hash_md5",
+            "sha1": "hash_sha1",
+            "sha256": "hash_sha256",
+        }
+        
+        # Collect all hashes by file path
+        file_hashes: dict[str, dict] = {}
+        
+        for hash_dir in hash_dirs:
+            if not hash_dir.is_dir():
+                continue
+            
+            for hash_file in hash_dir.iterdir():
+                if not hash_file.is_file():
+                    continue
+                
+                # Determine hash type from filename
+                hash_type = None
+                for prefix, col_name in hash_type_map.items():
+                    if prefix in hash_file.name.lower():
+                        hash_type = col_name
+                        break
+                
+                if not hash_type:
+                    continue
+                
+                try:
+                    for line in hash_file.read_text(errors="replace").splitlines():
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        # Format: <hash>  <filepath> or <hash> <filepath>
+                        parts = line.split(None, 1)
+                        if len(parts) == 2:
+                            hash_val, fpath = parts
+                            fpath = fpath.lstrip("*")  # Binary mode indicator
+                            if fpath not in file_hashes:
+                                file_hashes[fpath] = {"file_path": fpath}
+                            file_hashes[fpath][hash_type] = hash_val
+                except Exception as e:
+                    logger.warning(f"Error parsing hash file {hash_file}: {e}")
+        
+        # Write to database in batches
+        batch = []
+        for fpath, hashes in file_hashes.items():
+            fh = FileHash(
+                session_id=session_id,
+                file_path=hashes["file_path"],
+                hash_md5=hashes.get("hash_md5"),
+                hash_sha1=hashes.get("hash_sha1"),
+                hash_sha256=hashes.get("hash_sha256"),
+            )
+            batch.append(fh)
+            if len(batch) >= 500:
+                db.session.bulk_save_objects(batch)
+                db.session.commit()
+                count += len(batch)
+                batch = []
+        
+        if batch:
+            db.session.bulk_save_objects(batch)
+            db.session.commit()
+            count += len(batch)
+        
+        logger.info(f"Parsed {count} file hashes for session {session_id}")
+        return count
+    
     def _parse_artifacts(self, extract_dir: Path) -> list[dict]:
         """
         Parse artifacts from extracted directory.
+        Uses the standard UAC output directory structure for categorization.
         """
         artifacts = []
         
-        # Categorize files based on UAC directory structure
+        # UAC-aware category patterns (ordered by specificity)
         category_patterns = {
-            "live_response": ["live_response", "process", "network", "users", "system"],
+            "live_response/process": ["live_response/process"],
+            "live_response/network": ["live_response/network"],
+            "live_response/user": ["live_response/user"],
+            "live_response/system": ["live_response/system"],
+            "live_response/hardware": ["live_response/hardware"],
+            "live_response/software": ["live_response/software"],
+            "live_response": ["live_response"],
             "bodyfile": ["bodyfile"],
+            "hash_executables": ["hash_executables", "hash_exec"],
+            "memory_dump": ["memory_dump"],
             "logs": ["logs", "var/log", "log/"],
-            "configuration": ["etc", "config"],
-            "hash_data": ["hash"],
-            "persistence": ["cron", "systemd", "init.d"],
-            "authentication": ["auth", "ssh", "pam"],
+            "configuration": ["etc/", "config/"],
+            "persistence": ["cron", "systemd", "init.d", "rc.d", "launchd"],
+            "authentication": ["auth", "ssh", "pam", "shadow", "passwd"],
+            "user_data": ["home/", "root/"],
         }
         
         for file_path in extract_dir.rglob("*"):

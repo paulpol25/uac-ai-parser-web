@@ -24,20 +24,23 @@ This guide walks you through the complete workflow of using UAC AI for forensic 
 
 Before using UAC AI, ensure you have:
 
-1. **Backend running** at `http://localhost:8080`
-2. **Frontend running** at `http://localhost:3000`
-3. **Ollama running** with at least one model pulled
+1. **All services running** — use `./start.sh` for Docker, or start backend + frontend manually
+2. **Ollama running** with at least one model pulled
 
 ### Starting the Application
 
+**Docker (recommended):**
 ```bash
-# Terminal 1 - Start Backend
-cd backend
-python run.py
+./start.sh
+```
 
-# Terminal 2 - Start Frontend
-cd frontend
-npm run dev
+**Local development:**
+```bash
+# Terminal 1 - Backend
+cd backend && python run.py    # Port 5001
+
+# Terminal 2 - Frontend
+cd frontend && npm run dev     # Port 3000
 
 # Ensure Ollama is running
 ollama serve

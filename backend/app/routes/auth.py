@@ -2,75 +2,20 @@
 Authentication routes.
 
 Handles user registration, login, logout, and session management.
+Delegates to the configured auth provider (Supabase or local).
 """
-from datetime import datetime, timedelta
-import hashlib
-import secrets
 from functools import wraps
 
-from flask import Blueprint, request, jsonify, g, current_app
+from flask import Blueprint, request, jsonify, g
 
 from app.models import db, User
+from app.services.auth_providers import get_auth_provider, get_provider_name
 
 auth_bp = Blueprint("auth", __name__)
 
-# Simple token storage (in production, use Redis or database)
-# Token format: {token: {"user_id": int, "expires": datetime}}
-_tokens: dict[str, dict] = {}
-
-
-def hash_password(password: str) -> str:
-    """Hash a password with salt."""
-    salt = secrets.token_hex(16)
-    hashed = hashlib.pbkdf2_hmac(
-        "sha256",
-        password.encode(),
-        salt.encode(),
-        100000
-    ).hex()
-    return f"{salt}:{hashed}"
-
-
-def verify_password(password: str, stored_hash: str) -> bool:
-    """Verify a password against stored hash."""
-    try:
-        salt, hashed = stored_hash.split(":")
-        new_hash = hashlib.pbkdf2_hmac(
-            "sha256",
-            password.encode(),
-            salt.encode(),
-            100000
-        ).hex()
-        return new_hash == hashed
-    except (ValueError, AttributeError):
-        return False
-
-
-def generate_token(user_id: int) -> str:
-    """Generate an auth token for a user."""
-    token = secrets.token_urlsafe(32)
-    _tokens[token] = {
-        "user_id": user_id,
-        "expires": datetime.utcnow() + timedelta(days=7)
-    }
-    return token
-
-
-def get_user_from_token(token: str) -> User | None:
-    """Get user from auth token."""
-    token_data = _tokens.get(token)
-    if not token_data:
-        return None
-    
-    if datetime.utcnow() > token_data["expires"]:
-        del _tokens[token]
-        return None
-    
-    return User.query.get(token_data["user_id"])
-
 
 def require_auth(f):
-    """Decorator to require authentication."""
+    """Decorator to require authentication (works with any provider)."""
     @wraps(f)
     def decorated(*args, **kwargs):
         auth_header = request.headers.get("Authorization", "")
@@ -82,7 +27,8 @@ def require_auth(f):
             }), 401
         
         token = auth_header[7:]
-        user = get_user_from_token(token)
+        provider = get_auth_provider()
+        user = provider.verify_token(token)
         
         if not user:
             return jsonify({
@@ -96,6 +42,12 @@ def require_auth(f):
     return decorated
 
 
+@auth_bp.route("/provider", methods=["GET"])
+def get_active_provider():
+    """Return which auth provider is active."""
+    return jsonify({"provider": get_provider_name()})
+
+
 @auth_bp.route("/register", methods=["POST"])
 def register():
     """Register a new user."""
@@ -105,59 +57,30 @@ def register():
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
     
-    # Validation
-    errors = []
-    
-    if not username or len(username) < 3:
-        errors.append("Username must be at least 3 characters")
-    
-    if not email or "@" not in email:
-        errors.append("Valid email is required")
-    
-    if not password or len(password) < 6:
-        errors.append("Password must be at least 6 characters")
-    
-    if errors:
+    provider = get_auth_provider()
+    try:
+        result = provider.register(username, email, password)
+    except ValueError as e:
         return jsonify({
             "error": "validation_error",
-            "message": errors[0],
-            "errors": errors
+            "message": str(e),
         }), 400
     
-    # Check if username or email already exists
-    if User.query.filter_by(username=username).first():
+    if not result:
         return jsonify({
-            "error": "username_taken",
-            "message": "Username is already taken"
-        }), 409
+            "error": "registration_failed",
+            "message": "Registration failed",
+        }), 400
     
-    if User.query.filter_by(email=email).first():
-        return jsonify({
-            "error": "email_taken",
-            "message": "Email is already registered"
-        }), 409
+    status = 201
+    response = {
+        "token": result["token"],
+        "user": result["user"],
+    }
+    if "message" in result:
+        response["message"] = result["message"]
     
-    # Create user
-    user = User(
-        username=username,
-        email=email,
-        password_hash=hash_password(password)
-    )
-    
-    db.session.add(user)
-    db.session.commit()
-    
-    # Generate token
-    token = generate_token(user.id)
-    
-    return jsonify({
-        "token": token,
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email
-        }
-    }), 201
+    return jsonify(response), status
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -165,7 +88,7 @@ def login():
     """Login with username/email and password."""
     data = request.get_json() or {}
     
-    identifier = data.get("username", "").strip()  # Can be username or email
+    identifier = data.get("username", "").strip()
     password = data.get("password", "")
     
     if not identifier or not password:
@@ -174,32 +97,16 @@ def login():
             "message": "Username/email and password are required"
         }), 400
     
-    # Find user by username or email
-    user = User.query.filter(
-        (User.username == identifier) | (User.email == identifier.lower())
-    ).first()
+    provider = get_auth_provider()
+    result = provider.login(identifier, password)
     
-    if not user or not verify_password(password, user.password_hash):
+    if not result:
         return jsonify({
             "error": "invalid_credentials",
             "message": "Invalid username/email or password"
         }), 401
     
-    # Update last login
-    user.last_login = datetime.utcnow()
-    db.session.commit()
-    
-    # Generate token
-    token = generate_token(user.id)
-    
-    return jsonify({
-        "token": token,
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email
-        }
-    })
+    return jsonify(result)
 
 
 @auth_bp.route("/logout", methods=["POST"])
@@ -209,8 +116,8 @@ def logout():
     auth_header = request.headers.get("Authorization", "")
     token = auth_header[7:] if auth_header.startswith("Bearer ") else ""
     
-    if token in _tokens:
-        del _tokens[token]
+    provider = get_auth_provider()
+    provider.logout(token)
     
     return jsonify({"message": "Logged out successfully"})
 
@@ -249,13 +156,21 @@ def update_current_user():
             user.email = email
     
     if "password" in data:
-        password = data["password"]
-        if len(password) < 6:
+        # Password change only supported for local provider
+        if get_provider_name() == "local":
+            from app.services.auth_providers.local_provider import LocalAuthProvider
+            password = data["password"]
+            if len(password) < 6:
+                return jsonify({
+                    "error": "invalid_password",
+                    "message": "Password must be at least 6 characters"
+                }), 400
+            user.password_hash = LocalAuthProvider.hash_password(password)
+        else:
             return jsonify({
-                "error": "invalid_password",
-                "message": "Password must be at least 6 characters"
+                "error": "not_supported",
+                "message": "Password changes must be done through Supabase"
             }), 400
-        user.password_hash = hash_password(password)
     
     db.session.commit()
     

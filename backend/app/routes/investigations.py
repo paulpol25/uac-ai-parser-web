@@ -10,7 +10,7 @@ from flask import Blueprint, request, jsonify, g
 from datetime import datetime
 
 from app.models import db, Investigation, Session, User, Chunk
-from app.routes.auth import get_user_from_token
+from app.services.auth_providers import get_auth_provider
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,8 @@ def get_current_user_id() -> int:
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:]
-        user = get_user_from_token(token)
+        provider = get_auth_provider()
+        user = provider.verify_token(token)
         if user:
             return user.id
     

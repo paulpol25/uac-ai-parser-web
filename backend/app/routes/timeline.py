@@ -113,3 +113,41 @@ def get_plaso_status():
         }), 404
     
     return jsonify(status)
+
+
+@timeline_bp.route("/stats", methods=["GET"])
+def get_timeline_stats():
+    """
+    Get timeline statistics: event frequency by hour/day, event type distribution.
+    
+    Query params: session_id
+    """
+    session_id = request.args.get("session_id")
+    if not session_id:
+        return jsonify({"error": "missing_session_id"}), 400
+
+    timeline_service = TimelineService()
+    try:
+        return jsonify(timeline_service.get_timeline_stats(session_id))
+    except Exception as e:
+        return jsonify({"error": "stats_error", "message": str(e)}), 500
+
+
+@timeline_bp.route("/correlate", methods=["GET"])
+def correlate_events():
+    """
+    Correlate events within time windows for attack chain detection.
+    
+    Query params: session_id, window (seconds, default 60)
+    """
+    session_id = request.args.get("session_id")
+    if not session_id:
+        return jsonify({"error": "missing_session_id"}), 400
+
+    window = int(request.args.get("window", 60))
+    timeline_service = TimelineService()
+    try:
+        clusters = timeline_service.correlate_events(session_id, window_seconds=window)
+        return jsonify({"clusters": clusters, "count": len(clusters)})
+    except Exception as e:
+        return jsonify({"error": "correlate_error", "message": str(e)}), 500

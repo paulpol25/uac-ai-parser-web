@@ -4,7 +4,7 @@ import type {
   CreateInvestigationRequest,
   UpdateInvestigationRequest,
 } from "@/types/investigation";
-import type { AuthResponse, LoginRequest, RegisterRequest, User } from "@/types/auth";
+import type { AuthProvider, AuthResponse, LoginRequest, RegisterRequest, User } from "@/types/auth";
 import { getAuthHeader } from "@/stores/authStore";
 
 export const API_BASE_URL = "/api/v1";
@@ -18,6 +18,13 @@ function headers(contentType = true): HeadersInit {
 }
 
 // ===== Auth =====
+
+export async function getAuthProviderType(): Promise<AuthProvider> {
+  const response = await fetch(`${API_BASE_URL}/auth/provider`);
+  if (!response.ok) return "local";
+  const data = await response.json();
+  return data.provider as AuthProvider;
+}
 
 export async function register(data: RegisterRequest): Promise<AuthResponse> {
   const response = await fetch(`${API_BASE_URL}/auth/register`, {
@@ -997,5 +1004,193 @@ export async function getChatMessages(chatId: number): Promise<{ messages: ChatM
     throw new Error(error.message || "Failed to get messages");
   }
 
+  return response.json();
+}
+
+// ===== MITRE ATT&CK =====
+
+export interface MitreTechnique {
+  technique_id: string;
+  technique_name: string;
+  tactic: string;
+  confidence: number;
+  evidence_snippet?: string;
+}
+
+export interface MitreSummary {
+  total_techniques: number;
+  tactics: Record<string, MitreTechnique[]>;
+  tactic_count: Record<string, number>;
+}
+
+export async function mitreScan(sessionId: string): Promise<{ techniques: MitreTechnique[]; count: number }> {
+  const response = await fetch(`${API_BASE_URL}/analyze/mitre/scan`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || "MITRE scan failed");
+  }
+  return response.json();
+}
+
+export async function getMitreSummary(sessionId: string): Promise<MitreSummary> {
+  const response = await fetch(`${API_BASE_URL}/analyze/mitre/summary?session_id=${sessionId}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to fetch MITRE summary");
+  return response.json();
+}
+
+// ===== IOC Service (investigation-level) =====
+
+export interface IOCEntry {
+  id: number;
+  ioc_type: string;
+  value: string;
+  first_seen: string;
+  last_seen: string;
+  session_count: number;
+  sessions: string[];
+  context?: string;
+}
+
+export interface IOCSummaryData {
+  total_iocs: number;
+  by_type: Record<string, number>;
+  multi_session: number;
+}
+
+export interface IOCCorrelation {
+  cross_session: IOCEntry[];
+  single_session: IOCEntry[];
+}
+
+export async function iocExtract(sessionId: string): Promise<{ iocs_created: number }> {
+  const response = await fetch(`${API_BASE_URL}/analyze/iocs/extract`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  if (!response.ok) throw new Error("Failed to extract IOCs");
+  return response.json();
+}
+
+export async function getIOCSummary(investigationId: number): Promise<IOCSummaryData> {
+  const response = await fetch(`${API_BASE_URL}/analyze/iocs/summary?investigation_id=${investigationId}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to fetch IOC summary");
+  return response.json();
+}
+
+export async function getIOCCorrelation(investigationId: number): Promise<IOCCorrelation> {
+  const response = await fetch(`${API_BASE_URL}/analyze/iocs/correlate?investigation_id=${investigationId}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to correlate IOCs");
+  return response.json();
+}
+
+export async function searchIOCs(investigationId: number, query: string, iocType?: string): Promise<{ results: IOCEntry[] }> {
+  const response = await fetch(`${API_BASE_URL}/analyze/iocs/search`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ investigation_id: investigationId, query, ...(iocType ? { ioc_type: iocType } : {}) }),
+  });
+  if (!response.ok) throw new Error("Failed to search IOCs");
+  return response.json();
+}
+
+// ===== Session Compare =====
+
+export async function compareSessions(sessionA: string, sessionB: string) {
+  const response = await fetch(`${API_BASE_URL}/analyze/compare`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ session_a: sessionA, session_b: sessionB }),
+  });
+  if (!response.ok) throw new Error("Failed to compare sessions");
+  return response.json();
+}
+
+// ===== Entity Graph =====
+
+export async function getGraphNeighbors(sessionId: string, entityValue: string, depth: number = 1) {
+  const response = await fetch(`${API_BASE_URL}/analyze/graph/neighbors`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ session_id: sessionId, entity_value: entityValue, depth }),
+  });
+  if (!response.ok) throw new Error("Failed to get graph neighbors");
+  return response.json();
+}
+
+export async function getGraphPath(sessionId: string, source: string, target: string) {
+  const response = await fetch(`${API_BASE_URL}/analyze/graph/path`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ session_id: sessionId, source, target }),
+  });
+  if (!response.ok) throw new Error("Failed to get graph path");
+  return response.json();
+}
+
+export async function getGraphStats(sessionId: string) {
+  const response = await fetch(`${API_BASE_URL}/analyze/graph/stats?session_id=${sessionId}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to get graph stats");
+  return response.json();
+}
+
+export async function getKillChain(sessionId: string) {
+  const response = await fetch(`${API_BASE_URL}/analyze/graph/kill-chain?session_id=${sessionId}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to get kill chain");
+  return response.json();
+}
+
+// ===== Entities =====
+
+export async function getEntities(sessionId: string, type?: string, limit?: number) {
+  const params = new URLSearchParams({ session_id: sessionId });
+  if (type) params.append("type", type);
+  if (limit) params.append("limit", limit.toString());
+  const response = await fetch(`${API_BASE_URL}/analyze/entities?${params}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to get entities");
+  return response.json();
+}
+
+export async function searchEntities(sessionId: string, value: string, type?: string) {
+  const response = await fetch(`${API_BASE_URL}/analyze/entities/search`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ session_id: sessionId, value, ...(type ? { type } : {}) }),
+  });
+  if (!response.ok) throw new Error("Failed to search entities");
+  return response.json();
+}
+
+// ===== Timeline (with auth) =====
+
+export async function getTimelineStats(sessionId: string) {
+  const response = await fetch(`${API_BASE_URL}/timeline/stats?session_id=${sessionId}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to get timeline stats");
+  return response.json();
+}
+
+export async function getTimelineEvents(sessionId: string) {
+  const response = await fetch(`${API_BASE_URL}/timeline?session_id=${sessionId}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to get timeline");
   return response.json();
 }

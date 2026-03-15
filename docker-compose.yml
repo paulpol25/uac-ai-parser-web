@@ -1,36 +1,169 @@
 version: '3.8'
 
 services:
-  uac-ai-parser:
-    build: .
-    ports:
-      - "5000:5000"
-    volumes:
-      # Persistent data storage
-      - uac-ai-data:/app/data
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  database:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: uac-ai-database
     environment:
+      POSTGRES_USER: ${POSTGRES_USER:-uacai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-uacai}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-uacai} -d ${POSTGRES_DB:-uacai}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - uac-ai-network
+
+  # ---------------------------------------------------------------------------
+  # Redis (caching, MCP OAuth persistence)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: uac-ai-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - uac-ai-network
+
+  # ---------------------------------------------------------------------------
+  # Backend API (Flask)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: uac-ai-backend
+    environment:
+      # Database
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-uacai}:${POSTGRES_PASSWORD:-changeme}@database:5432/${POSTGRES_DB:-uacai}
+      - REDIS_URL=redis://redis:6379/0
+      # Flask
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - FLASK_ENV=production
       - FLASK_DEBUG=false
-      - CORS_ORIGINS=http://localhost:5000,http://localhost:3000
-      # Use host.docker.internal to connect to Ollama on the host machine
+      - CORS_ORIGINS=*
+      # LLM
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1}
-      # Optional: Configure cloud LLM providers
-      # - OPENAI_API_KEY=${OPENAI_API_KEY}
-      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      # - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      # Auth
+      - AUTH_PROVIDER=${AUTH_PROVIDER:-local}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_KEY=${SUPABASE_KEY:-}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-}
+      # Admin seed
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@uac-ai.local}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      # Cleanup
+      - CLEANUP_ENABLED=${CLEANUP_ENABLED:-true}
+      - CLEANUP_INTERVAL_HOURS=${CLEANUP_INTERVAL_HOURS:-24}
+      - SESSION_RETENTION_DAYS=${SESSION_RETENTION_DAYS:-30}
+      - STORAGE_WARNING_MB=${STORAGE_WARNING_MB:-500}
+      # Optional cloud LLM keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    ports:
+      - "0.0.0.0:5001:5000"
+    volumes:
+      - uac-ai-data:/app/data
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     extra_hosts:
-      # Enable host.docker.internal on Linux
       - "host.docker.internal:host-gateway"
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/v1/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - uac-ai-network
+
+  # ---------------------------------------------------------------------------
+  # Frontend (React / Vite + Nginx)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: uac-ai-frontend
+    ports:
+      - "0.0.0.0:3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - uac-ai-network
+
+  # ---------------------------------------------------------------------------
+  # MCP Server (Model Context Protocol — AI tool bridge)
+  # ---------------------------------------------------------------------------
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: uac-ai-mcp
+    environment:
+      UAC_AI_API_URL: http://backend:5000/api/v1
+      MCP_TRANSPORT: sse
+      SSE_PORT: "8811"
+      REDIS_URL: redis://redis:6379/0
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+      LOG_LEVEL: ${MCP_LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:8811:8811"
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from uac_ai_mcp.server import mcp; print('ok')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
       start_period: 10s
+    restart: unless-stopped
+    networks:
+      - uac-ai-network
+
+networks:
+  uac-ai-network:
+    driver: bridge
 
 volumes:
+  postgres_data:
+  redis_data:
   uac-ai-data:
-    driver: local

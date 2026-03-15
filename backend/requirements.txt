@@ -2,7 +2,14 @@
 flask>=3.0.0
 flask-cors>=4.0.0
 flask-sqlalchemy>=3.1.0
+flask-migrate>=4.0.0
 python-dotenv>=1.0.0
+
+# Database drivers
+psycopg2-binary>=2.9.0
+
+# Redis
+redis>=5.0.0
 
 # HTTP client
 requests>=2.31.0
@@ -19,6 +26,12 @@ rank-bm25>=0.2.2
 openai>=1.0.0  # For OpenAI GPT models
 google-generativeai>=0.3.0  # For Google Gemini models
 anthropic>=0.15.0  # For Anthropic Claude models
+
+# Auth providers
+supabase>=2.0.0  # For Supabase auth (optional, needed when AUTH_PROVIDER=supabase)
+
+# Scheduling
+APScheduler>=3.10.0
 
 # Data processing
 pandas>=2.0.0

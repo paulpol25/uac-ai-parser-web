@@ -917,7 +917,8 @@ class TieredRAGService:
             Entity.session_id == session.id
         ).group_by(
             Entity.entity_type,
-            Entity.normalized_value
+            Entity.normalized_value,
+            Entity.entity_value
         ).order_by(
             func.count(Entity.id).desc()
         )

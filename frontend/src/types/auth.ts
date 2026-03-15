@@ -2,6 +2,8 @@
  * Auth types for the frontend
  */
 
+export type AuthProvider = "supabase" | "local";
+
 export interface User {
   id: number;
   username: string;
@@ -11,8 +13,9 @@ export interface User {
 }
 
 export interface AuthResponse {
-  token: string;
+  token: string | null;
   user: User;
+  message?: string;
 }
 
 export interface LoginRequest {

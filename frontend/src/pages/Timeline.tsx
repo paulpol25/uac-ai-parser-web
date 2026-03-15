@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { ScrollToTop } from "@/components/ui/ScrollToTop";
+import { InteractiveTimeline } from "@/components/features/InteractiveTimeline";
 import { useInvestigationStore } from "@/stores/investigationStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { getTimeline, getInvestigation } from "@/services/api";
@@ -197,6 +198,7 @@ export function Timeline() {
   useFocusShortcut(searchInputRef);
   
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(sessionId);
+  const [viewMode, setViewMode] = useState<"table" | "interactive">("table");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [textSearch, setTextSearch] = useState("");
@@ -353,6 +355,21 @@ export function Timeline() {
             <Clock className="w-4 h-4 text-purple-500" />
           </div>
           <h1 className="text-lg font-heading font-semibold">Timeline</h1>
+          {/* View mode toggle */}
+          <div className="flex rounded-lg border border-border-default overflow-hidden text-xs ml-2">
+            <button
+              onClick={() => setViewMode("table")}
+              className={`px-3 py-1.5 transition-colors ${viewMode === "table" ? "bg-brand-primary text-white" : "bg-bg-base text-text-muted hover:text-text-primary"}`}
+            >
+              Table
+            </button>
+            <button
+              onClick={() => setViewMode("interactive")}
+              className={`px-3 py-1.5 transition-colors ${viewMode === "interactive" ? "bg-brand-primary text-white" : "bg-bg-base text-text-muted hover:text-text-primary"}`}
+            >
+              Interactive
+            </button>
+          </div>
         </div>
         
         {/* Inline Filters */}
@@ -494,7 +511,15 @@ export function Timeline() {
         </div>
       )}
 
+      {/* Interactive View */}
+      {viewMode === "interactive" && effectiveSessionId && (
+        <div className="flex-1 min-h-0 overflow-auto">
+          <InteractiveTimeline sessionId={effectiveSessionId} />
+        </div>
+      )}
+
       {/* Timeline Table */}
+      {viewMode === "table" && (
       <div className="flex-1 bg-bg-surface border border-border-subtle rounded-xl overflow-hidden flex flex-col min-h-0">
         {isLoading && (
           <div className="flex-1 flex items-center justify-center text-text-muted">
@@ -565,6 +590,7 @@ export function Timeline() {
           </div>
         )}
       </div>
+      )}
 
       <ScrollToTop />
     </div>

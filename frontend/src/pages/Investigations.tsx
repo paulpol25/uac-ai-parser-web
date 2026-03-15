@@ -10,7 +10,6 @@ import {
   Search,
   LayoutGrid,
   LayoutList,
-  Filter,
   X,
   CheckSquare,
   Square,

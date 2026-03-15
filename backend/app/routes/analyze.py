@@ -750,3 +750,217 @@ def get_relevance_stats():
             "error": "relevance_error",
             "message": str(e)
         }), 500
+
+
+# ========== MITRE ATT&CK Endpoints ==========
+
+@analyze_bp.route("/mitre/scan", methods=["POST"])
+def mitre_scan():
+    """
+    Scan a session for MITRE ATT&CK technique indicators.
+    
+    Body: {"session_id": <int>}
+    """
+    from app.services.mitre_service import MitreService
+
+    data = request.get_json()
+    session_id = data.get("session_id") if data else None
+    if not session_id:
+        return jsonify({"error": "missing_session_id"}), 400
+
+    try:
+        svc = MitreService()
+        results = svc.scan_session(int(session_id))
+        return jsonify({"techniques": results, "count": len(results)})
+    except Exception as e:
+        return jsonify({"error": "mitre_scan_error", "message": str(e)}), 500
+
+
+@analyze_bp.route("/mitre/mappings", methods=["GET"])
+def mitre_mappings():
+    """Get MITRE mappings for a session."""
+    from app.services.mitre_service import MitreService
+
+    session_id = request.args.get("session_id")
+    if not session_id:
+        return jsonify({"error": "missing_session_id"}), 400
+
+    svc = MitreService()
+    return jsonify(svc.get_session_mappings(int(session_id)))
+
+
+@analyze_bp.route("/mitre/summary", methods=["GET"])
+def mitre_summary():
+    """Get MITRE ATT&CK summary grouped by tactic for a session."""
+    from app.services.mitre_service import MitreService
+
+    session_id = request.args.get("session_id")
+    if not session_id:
+        return jsonify({"error": "missing_session_id"}), 400
+
+    svc = MitreService()
+    return jsonify(svc.get_session_summary(int(session_id)))
+
+
+# ========== IOC Endpoints ==========
+
+@analyze_bp.route("/iocs/extract", methods=["POST"])
+def iocs_extract():
+    """
+    Extract IOCs from entities for a session and correlate across investigation.
+    
+    Body: {"session_id": <int>}
+    """
+    from app.services.ioc_service import IOCService
+
+    data = request.get_json()
+    session_id = data.get("session_id") if data else None
+    if not session_id:
+        return jsonify({"error": "missing_session_id"}), 400
+
+    svc = IOCService()
+    count = svc.extract_iocs_for_session(int(session_id))
+    return jsonify({"new_iocs": count})
+
+
+@analyze_bp.route("/iocs/correlate", methods=["GET"])
+def iocs_correlate():
+    """
+    Correlate IOCs across sessions in an investigation.
+    
+    Query params: investigation_id
+    """
+    from app.services.ioc_service import IOCService
+
+    investigation_id = request.args.get("investigation_id")
+    if not investigation_id:
+        return jsonify({"error": "missing_investigation_id"}), 400
+
+    svc = IOCService()
+    return jsonify(svc.correlate_investigation(int(investigation_id)))
+
+
+@analyze_bp.route("/iocs/summary", methods=["GET"])
+def iocs_summary():
+    """Get IOC summary for an investigation."""
+    from app.services.ioc_service import IOCService
+
+    investigation_id = request.args.get("investigation_id")
+    if not investigation_id:
+        return jsonify({"error": "missing_investigation_id"}), 400
+
+    svc = IOCService()
+    return jsonify(svc.get_ioc_summary(int(investigation_id)))
+
+
+@analyze_bp.route("/iocs/search", methods=["POST"])
+def iocs_search():
+    """
+    Search for a specific IOC value.
+    
+    Body: {"investigation_id": <int>, "query": "<value>", "ioc_type": "<optional>"}
+    """
+    from app.services.ioc_service import IOCService
+
+    data = request.get_json()
+    if not data or "investigation_id" not in data or "query" not in data:
+        return jsonify({"error": "missing_fields"}), 400
+
+    svc = IOCService()
+    results = svc.search_ioc(
+        int(data["investigation_id"]),
+        data["query"],
+        ioc_type=data.get("ioc_type"),
+    )
+    return jsonify(results)
+
+
+# ========== Hash Endpoints ==========
+
+@analyze_bp.route("/hashes", methods=["GET"])
+def get_hashes():
+    """
+    Get file hashes for a session.
+    
+    Query params: session_id, unknown_only (bool)
+    """
+    from app.services.hash_service import HashService
+
+    session_id = request.args.get("session_id")
+    if not session_id:
+        return jsonify({"error": "missing_session_id"}), 400
+
+    unknown_only = request.args.get("unknown_only", "false").lower() == "true"
+    svc = HashService()
+    return jsonify(svc.get_session_hashes(int(session_id), unknown_only=unknown_only))
+
+
+@analyze_bp.route("/hashes/compare", methods=["POST"])
+def compare_hashes():
+    """
+    Compare file hashes between two sessions.
+    
+    Body: {"session_a": <int>, "session_b": <int>}
+    """
+    from app.services.hash_service import HashService
+
+    data = request.get_json()
+    if not data or "session_a" not in data or "session_b" not in data:
+        return jsonify({"error": "missing_session_ids"}), 400
+
+    svc = HashService()
+    return jsonify(svc.compare_sessions(int(data["session_a"]), int(data["session_b"])))
+
+
+@analyze_bp.route("/hashes/search", methods=["POST"])
+def search_hash():
+    """
+    Search for a specific hash value across an investigation.
+    
+    Body: {"investigation_id": <int>, "hash": "<value>"}
+    """
+    from app.services.hash_service import HashService
+
+    data = request.get_json()
+    if not data or "investigation_id" not in data or "hash" not in data:
+        return jsonify({"error": "missing_fields"}), 400
+
+    svc = HashService()
+    return jsonify(svc.search_hash(int(data["investigation_id"]), data["hash"]))
+
+
+@analyze_bp.route("/hashes/mark-known-good", methods=["POST"])
+def mark_known_good():
+    """
+    Mark file hashes as known-good baseline.
+    
+    Body: {"session_id": <int>, "file_paths": ["<path>", ...] (optional, null=all)}
+    """
+    from app.services.hash_service import HashService
+
+    data = request.get_json()
+    if not data or "session_id" not in data:
+        return jsonify({"error": "missing_session_id"}), 400
+
+    svc = HashService()
+    count = svc.mark_known_good(int(data["session_id"]), data.get("file_paths"))
+    return jsonify({"marked": count})
+
+
+# ========== Session Comparison Endpoints ==========
+
+@analyze_bp.route("/compare", methods=["POST"])
+def compare_sessions():
+    """
+    Compare two sessions across all dimensions.
+    
+    Body: {"session_a": <int>, "session_b": <int>}
+    """
+    from app.services.comparison_service import ComparisonService
+
+    data = request.get_json()
+    if not data or "session_a" not in data or "session_b" not in data:
+        return jsonify({"error": "missing_session_ids"}), 400
+
+    svc = ComparisonService()
+    return jsonify(svc.compare(int(data["session_a"]), int(data["session_b"])))

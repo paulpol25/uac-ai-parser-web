@@ -160,6 +160,23 @@ class EntityExtractor:
             re.IGNORECASE
         ),
         
+        # User agent strings (HTTP)
+        'user_agent': re.compile(
+            r'(?:User-Agent:\s*|")(Mozilla/5\.0\s+\([^)]+\)[^"]{10,200})"?',
+            re.IGNORECASE
+        ),
+        
+        # macOS plist keys / Launch Agent/Daemon labels
+        'plist_key': re.compile(
+            r'\b(com\.[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+){1,5})\b'
+        ),
+        
+        # Piped/chained commands (capture full pipeline)
+        'command_pipeline': re.compile(
+            r'(?:^|\$\s*|>\s*)((?:[\w/.-]+\s+[^\n|;]{0,80}\|[\s]*){1,5}[\w/.-]+\s+[^\n;|]{0,80})',
+            re.MULTILINE
+        ),
+        
         # Timestamps from common log formats
         # Syslog: Jan 15 10:30:45
         # ISO: 2024-01-15T10:30:45
@@ -194,6 +211,9 @@ class EntityExtractor:
         'env_var': set(),
         'base64': set(),
         'ssh_fingerprint': set(),
+        'user_agent': set(),
+        'plist_key': set(),
+        'command_pipeline': set(),
     }
     
     # Max entities per type per chunk (prevent explosion)
@@ -309,6 +329,12 @@ class EntityExtractor:
             return value  # Keep original case for base64
         elif entity_type == 'ssh_fingerprint':
             return value.lower()
+        elif entity_type == 'user_agent':
+            return value.strip().lower()
+        elif entity_type == 'plist_key':
+            return value.lower()
+        elif entity_type == 'command_pipeline':
+            return value.strip()
         elif entity_type.startswith('hash_'):
             return value.lower()
         else:

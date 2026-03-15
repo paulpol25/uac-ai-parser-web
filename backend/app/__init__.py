@@ -7,12 +7,14 @@ import os
 import logging
 from flask import Flask
 from flask_cors import CORS
+from flask_migrate import Migrate
 from sqlalchemy import event
 
 from config import config_by_name
 from app.models import db
 
 logger = logging.getLogger(__name__)
+migrate = Migrate()
 
 
 def _set_sqlite_pragma(dbapi_connection, connection_record):
@@ -22,6 +24,11 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA busy_timeout=30000")  # 30 second timeout
     cursor.close()
+
+
+def _is_sqlite(app):
+    """Check if the configured database is SQLite."""
+    return app.config.get("SQLALCHEMY_DATABASE_URI", "").startswith("sqlite")
 
 
 def _cleanup_stuck_sessions():
@@ -43,6 +50,22 @@ def _cleanup_stuck_sessions():
         db.session.commit()
 
 
+def _init_redis(app):
+    """Initialize Redis connection if REDIS_URL is configured."""
+    redis_url = app.config.get("REDIS_URL", "")
+    if redis_url:
+        try:
+            import redis
+            app.redis = redis.from_url(redis_url, decode_responses=True)
+            app.redis.ping()
+            logger.info(f"[Redis] Connected to {redis_url}")
+        except Exception as e:
+            logger.warning(f"[Redis] Connection failed: {e} — caching disabled")
+            app.redis = None
+    else:
+        app.redis = None
+
+
 def create_app(config_name: str | None = None) -> Flask:
     """
     Application factory for creating the Flask app.
@@ -61,23 +84,28 @@ def create_app(config_name: str | None = None) -> Flask:
     
     # Ensure directories exist
     app.config["UPLOAD_FOLDER"].mkdir(parents=True, exist_ok=True)
-    app.config["DATABASE_PATH"].parent.mkdir(parents=True, exist_ok=True)
+    if _is_sqlite(app):
+        app.config["DATABASE_PATH"].parent.mkdir(parents=True, exist_ok=True)
     app.config["CHROMA_PERSIST_DIR"].mkdir(parents=True, exist_ok=True)
     
     # Initialize extensions
     db.init_app(app)
+    migrate.init_app(app, db)
     CORS(app, origins=app.config["CORS_ORIGINS"], supports_credentials=True)
     
-    # Enable SQLite WAL mode for better concurrency
+    # Database-specific setup
     with app.app_context():
-        event.listen(db.engine, "connect", _set_sqlite_pragma)
-    
-    # Create database tables
-    with app.app_context():
-        db.create_all()
+        if _is_sqlite(app):
+            # Enable SQLite WAL mode for better concurrency
+            event.listen(db.engine, "connect", _set_sqlite_pragma)
+            # Auto-create tables for SQLite dev; PostgreSQL uses migrations/init scripts
+            db.create_all()
         
         # Cleanup any sessions stuck in "processing" state from previous crashes
         _cleanup_stuck_sessions()
+    
+    # Initialize Redis (for caching / MCP session persistence)
+    _init_redis(app)
     
     # Register blueprints
     from app.routes.health import health_bp
@@ -90,6 +118,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.routes.investigations import investigations_bp
     from app.routes.search import search_bp
     from app.routes.chats import chats_bp
+    from app.routes.admin import admin_bp
     
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(auth_bp, url_prefix="/api/v1/auth")
@@ -101,9 +130,11 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(investigations_bp, url_prefix="/api/v1/investigations")
     app.register_blueprint(search_bp, url_prefix="/api/v1/search")
     app.register_blueprint(chats_bp, url_prefix="/api/v1/chats")
+    app.register_blueprint(admin_bp, url_prefix="/api/v1/admin")
     
     # Serve static files in production (when built frontend is present)
-    static_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+    static_folder = os.environ.get("STATIC_FOLDER") or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+    logger.info(f"Looking for static files at: {static_folder}")
     if os.path.exists(static_folder):
         from flask import send_from_directory
         

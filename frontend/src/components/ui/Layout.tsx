@@ -13,6 +13,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   ChevronDown,
+  Shield,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
@@ -29,6 +30,7 @@ const navItems = [
   { to: "/query", icon: Sparkles, label: "AI Analysis" },
   { to: "/timeline", icon: Clock, label: "Timeline" },
   { to: "/search", icon: Search, label: "Search" },
+  { to: "/analysis", icon: Shield, label: "Analysis" },
   { to: "/export", icon: Download, label: "Export" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];

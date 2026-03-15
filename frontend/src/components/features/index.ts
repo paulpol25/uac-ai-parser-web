@@ -10,3 +10,8 @@ export { StatusWidget } from "./StatusWidget";
 export { SuggestedQuestions } from "./SuggestedQuestions";
 export { QueryHistory, addToQueryHistory } from "./QueryHistory";
 export { GlobalUploadProgress } from "./GlobalUploadProgress";
+export { MitreAttackMap } from "./MitreAttackMap";
+export { InteractiveTimeline } from "./InteractiveTimeline";
+export { IOCDashboard } from "./IOCDashboard";
+export { SessionComparison } from "./SessionComparison";
+export { EntityGraph } from "./EntityGraph";

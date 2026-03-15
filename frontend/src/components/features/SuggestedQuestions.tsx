@@ -63,7 +63,7 @@ export function SuggestedQuestions({ sessionId, onSelectQuestion }: SuggestedQue
 
   const handleRefresh = () => {
     // Force refresh from LLM
-    fetchSuggestions(sessionId, true).then((newData) => {
+    fetchSuggestions(sessionId, true).then(() => {
       refetch();
     });
     refetch();

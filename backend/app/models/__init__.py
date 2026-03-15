@@ -32,6 +32,22 @@ class User(db.Model):
         return f"<User {self.username}>"
 
 
+class AuthToken(db.Model):
+    """DB-backed auth token storage (replaces in-memory dict)."""
+    __tablename__ = "auth_tokens"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = db.relationship("User", backref=db.backref("auth_tokens", lazy="dynamic"))
+    
+    def __repr__(self):
+        return f"<AuthToken user={self.user_id} expires={self.expires_at}>"
+
+
 class Investigation(db.Model):
     """
     Top-level container for forensic investigations.
@@ -424,5 +440,121 @@ class ChatMessage(db.Model):
         return f"<ChatMessage {self.role}: {self.content[:30]}...>"
 
 
+class MitreMapping(db.Model):
+    """MITRE ATT&CK technique mappings detected in a session."""
+    __tablename__ = "mitre_mappings"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=False, index=True)
+    
+    technique_id = db.Column(db.String(20), nullable=False, index=True)  # e.g. T1053.003
+    technique_name = db.Column(db.String(200), nullable=False)
+    tactic = db.Column(db.String(50), nullable=False, index=True)  # e.g. persistence
+    
+    confidence = db.Column(db.Float, default=0.5)  # 0-1
+    evidence_chunk_id = db.Column(db.String(64), db.ForeignKey("chunks.chunk_id"), nullable=True)
+    evidence_snippet = db.Column(db.Text, nullable=True)
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    session = db.relationship("Session", backref=db.backref("mitre_mappings", lazy="dynamic"))
+    
+    __table_args__ = (
+        db.Index("idx_mitre_session_tactic", "session_id", "tactic"),
+    )
+    
+    def __repr__(self):
+        return f"<MitreMapping {self.technique_id} ({self.tactic})>"
+
+
+class IOCEntry(db.Model):
+    """Indicators of Compromise extracted and correlated across sessions."""
+    __tablename__ = "ioc_entries"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id"), nullable=False, index=True)
+    
+    ioc_type = db.Column(db.String(30), nullable=False, index=True)  # ip, domain, url, hash, email, user_agent
+    value = db.Column(db.String(500), nullable=False, index=True)
+    normalized_value = db.Column(db.String(500), nullable=False, index=True)
+    
+    # Enrichment
+    geo_country = db.Column(db.String(100), nullable=True)
+    geo_city = db.Column(db.String(100), nullable=True)
+    geo_asn = db.Column(db.String(200), nullable=True)
+    
+    # Cross-session tracking
+    session_ids = db.Column(db.Text, nullable=True)  # JSON array of session IDs where seen
+    first_seen = db.Column(db.DateTime, nullable=True)
+    last_seen = db.Column(db.DateTime, nullable=True)
+    occurrence_count = db.Column(db.Integer, default=1)
+    
+    # Links
+    mitre_technique_ids = db.Column(db.Text, nullable=True)  # JSON array
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    investigation = db.relationship("Investigation", backref=db.backref("ioc_entries", lazy="dynamic"))
+    
+    __table_args__ = (
+        db.Index("idx_ioc_investigation_type", "investigation_id", "ioc_type"),
+        db.UniqueConstraint("investigation_id", "ioc_type", "normalized_value", name="uq_ioc_entry"),
+    )
+    
+    def __repr__(self):
+        return f"<IOCEntry {self.ioc_type}:{self.value[:40]}>"
+
+
+class FileHash(db.Model):
+    """Hash records from UAC hash_executables directory."""
+    __tablename__ = "file_hashes"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=False, index=True)
+    
+    file_path = db.Column(db.String(500), nullable=False)
+    hash_md5 = db.Column(db.String(32), nullable=True, index=True)
+    hash_sha1 = db.Column(db.String(40), nullable=True, index=True)
+    hash_sha256 = db.Column(db.String(64), nullable=True, index=True)
+    
+    file_size = db.Column(db.BigInteger, nullable=True)
+    is_known_good = db.Column(db.Boolean, nullable=True)  # None = unknown
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    session = db.relationship("Session", backref=db.backref("file_hashes", lazy="dynamic"))
+    
+    __table_args__ = (
+        db.Index("idx_filehash_session", "session_id"),
+    )
+    
+    def __repr__(self):
+        return f"<FileHash {self.file_path}>"
+
+
+class CleanupPolicy(db.Model):
+    """Per-investigation or global retention policies."""
+    __tablename__ = "cleanup_policies"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id"), nullable=True, unique=True)
+    
+    retention_days = db.Column(db.Integer, default=90)  # 0 = never auto-delete
+    delete_extracted_after_parse = db.Column(db.Boolean, default=True)
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    investigation = db.relationship("Investigation", backref=db.backref("cleanup_policy", uselist=False))
+    
+    def __repr__(self):
+        return f"<CleanupPolicy inv={self.investigation_id} days={self.retention_days}>"
+
+
 # Export all models
-__all__ = ["db", "User", "Investigation", "Session", "Chunk", "Entity", "EntityRelationship", "QueryLog", "ChunkRelevance", "Chat", "ChatMessage"]
+__all__ = [
+    "db", "User", "AuthToken", "Investigation", "Session", "Chunk",
+    "Entity", "EntityRelationship", "QueryLog", "ChunkRelevance",
+    "Chat", "ChatMessage", "MitreMapping", "IOCEntry", "FileHash", "CleanupPolicy",
+]

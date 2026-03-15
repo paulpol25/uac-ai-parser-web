@@ -713,7 +713,7 @@ PARAMS: {{"answer": "Your complete answer here"}}
                 by_type = {}
                 for e in entities:
                     # Get the chunk for context
-                    chunk = Chunk.query.get(e.chunk_id)
+                    chunk = Chunk.query.filter_by(chunk_id=e.chunk_id).first()
                     source = chunk.source_file if chunk else "unknown"
                     
                     formatted.append({
@@ -778,7 +778,7 @@ PARAMS: {{"answer": "Your complete answer here"}}
                     
                     # From entity extraction
                     for e in command_entities:
-                        chunk = Chunk.query.get(e.chunk_id)
+                        chunk = Chunk.query.filter_by(chunk_id=e.chunk_id).first()
                         source = chunk.source_file if chunk else "unknown"
                         sources.add(source)
                         commands_found.append({

@@ -13,7 +13,7 @@ import { SuggestedQuestions } from "@/components/features/SuggestedQuestions";
 import { QueryHistory, addToQueryHistory } from "@/components/features/QueryHistory";
 import { ChatMessage, type ChatMessageData } from "@/components/features/ChatMessage";
 import { AgentProgress, useAgentProgress } from "@/components/features/AgentProgress";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { Investigation, InvestigationSession } from "@/types/investigation";
 
 // Use ChatMessageData from the component
@@ -43,7 +43,6 @@ export function Query() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { sessionId, setSession, clearSession } = useSessionStore();
-  const queryClient = useQueryClient();
 
   // Handle URL query parameter (from Timeline "Ask AI" button)
   useEffect(() => {
@@ -136,7 +135,7 @@ export function Query() {
             role: msg.role as "user" | "assistant",
             content: msg.content,
             timestamp: new Date(msg.created_at),
-            sources: msg.sources,
+            sources: msg.sources?.map((s) => ({ file: s })),
           }))
         );
       }).catch(console.error);

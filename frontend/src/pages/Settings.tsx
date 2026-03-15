@@ -37,7 +37,9 @@ import {
   getLocalEmbeddingModels,
   type ProviderInfo,
   type ProcessingSettings,
+  API_BASE_URL,
 } from "@/services/api";
+import { getAuthHeader } from "@/stores/authStore";
 
 interface ModelOption {
   id: string;
@@ -46,7 +48,7 @@ interface ModelOption {
   recommended?: boolean;
 }
 
-type SettingsTab = "providers" | "embeddings" | "advanced" | "about";
+type SettingsTab = "providers" | "embeddings" | "advanced" | "storage" | "about";
 
 // Provider metadata with icon, description, and available models
 const PROVIDER_INFO: Record<string, { 
@@ -113,8 +115,134 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Brain }[] = [
   { id: "providers", label: "AI Providers", icon: Brain },
   { id: "embeddings", label: "Embeddings", icon: Cpu },
   { id: "advanced", label: "Advanced", icon: HardDrive },
+  { id: "storage", label: "Storage", icon: Database },
   { id: "about", label: "About", icon: Info },
 ];
+
+
+
+interface StorageReport {
+  database_size_mb: number;
+  chromadb_size_mb: number;
+  uploads_size_mb: number;
+  total_size_mb: number;
+  warning_threshold_mb: number;
+  above_warning: boolean;
+}
+
+function StorageTab() {
+  const queryClient = useQueryClient();
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
+
+  const { data: report, isLoading } = useQuery<StorageReport>({
+    queryKey: ["storage-report"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE_URL}/admin/storage`, { headers: getAuthHeader() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const cleanupMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE_URL}/admin/cleanup/run`, { method: "POST", headers: getAuthHeader() });
+      if (!res.ok) throw new Error("Cleanup failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["storage-report"] });
+      setConfirmCleanup(false);
+    },
+  });
+
+  const total = report?.total_size_mb ?? 0;
+  const threshold = report?.warning_threshold_mb ?? 500;
+  const pct = threshold > 0 ? Math.min(100, (total / threshold) * 100) : 0;
+
+  return (
+    <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
+        <h2 className="font-semibold text-text-primary">Storage Management</h2>
+        {!confirmCleanup ? (
+          <Button size="sm" variant="secondary" onClick={() => setConfirmCleanup(true)}>
+            Run Cleanup
+          </Button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-text-muted">Delete expired data?</span>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => cleanupMutation.mutate()}
+              disabled={cleanupMutation.isPending}
+            >
+              {cleanupMutation.isPending ? "Cleaning..." : "Confirm"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmCleanup(false)}>
+              Cancel
+            </Button>
+          </div>
+        )}
+      </div>
+      <div className="p-5 space-y-6">
+        {isLoading ? (
+          <p className="text-text-muted text-sm">Loading storage info...</p>
+        ) : report ? (
+          <>
+            {/* Usage bar */}
+            <div>
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="text-text-muted">
+                  Total: <span className="text-text-primary font-medium">{total.toFixed(1)} MB</span>
+                </span>
+                <span className="text-text-muted">
+                  Warning at {threshold} MB
+                </span>
+              </div>
+              <div className="h-3 bg-bg-base rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    report.above_warning ? "bg-red-500" : pct > 60 ? "bg-amber-500" : "bg-brand-primary"
+                  }`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              {report.above_warning && (
+                <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" /> Storage above warning threshold
+                </p>
+              )}
+            </div>
+
+            {/* Breakdown */}
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label: "Database", value: report.database_size_mb, icon: Database, color: "text-blue-400" },
+                { label: "Embeddings (ChromaDB)", value: report.chromadb_size_mb, icon: Search, color: "text-purple-400" },
+                { label: "Uploads", value: report.uploads_size_mb, icon: HardDrive, color: "text-cyan-400" },
+              ].map(({ label, value, icon: Icon, color }) => (
+                <div key={label} className="bg-bg-base rounded-lg p-4 text-center">
+                  <Icon className={`h-5 w-5 mx-auto mb-2 ${color}`} />
+                  <p className="text-lg font-bold text-text-primary">{value.toFixed(1)} MB</p>
+                  <p className="text-xs text-text-muted">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Cleanup result */}
+            {cleanupMutation.data && (
+              <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 text-xs text-green-400">
+                Cleanup complete — removed {cleanupMutation.data.expired_sessions ?? 0} expired sessions,{" "}
+                {cleanupMutation.data.orphaned_uploads ?? 0} orphaned uploads,{" "}
+                {cleanupMutation.data.expired_tokens ?? 0} expired tokens.
+              </div>
+            )}
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 export function Settings() {
   const queryClient = useQueryClient();
@@ -853,6 +981,9 @@ export function Settings() {
           )}
         </div>
         )}
+
+        {/* Storage Tab */}
+        {activeTab === "storage" && <StorageTab />}
 
         {/* About Tab */}
         {activeTab === "about" && (

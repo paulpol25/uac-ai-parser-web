@@ -710,3 +710,95 @@ class TimelineService:
             except (UnicodeDecodeError, UnicodeError):
                 continue
         return ""
+
+    def get_timeline_stats(self, session_id: str) -> dict[str, Any]:
+        """
+        Get timeline statistics: event frequency by hour/day, event type distribution.
+        """
+        timeline = self.get_timeline(session_id)
+        events = timeline.get("events", [])
+
+        by_hour: dict[str, int] = {}
+        by_day: dict[str, int] = {}
+        by_type: dict[str, int] = {}
+
+        for event in events:
+            ts_str = event.get("timestamp", "")
+            etype = event.get("event_type", "unknown")
+
+            by_type[etype] = by_type.get(etype, 0) + 1
+
+            if len(ts_str) >= 13:
+                hour_key = ts_str[:13]  # YYYY-MM-DDTHH
+                by_hour[hour_key] = by_hour.get(hour_key, 0) + 1
+            if len(ts_str) >= 10:
+                day_key = ts_str[:10]  # YYYY-MM-DD
+                by_day[day_key] = by_day.get(day_key, 0) + 1
+
+        # Find busiest periods
+        busiest_hour = max(by_hour, key=by_hour.get) if by_hour else None
+        busiest_day = max(by_day, key=by_day.get) if by_day else None
+
+        return {
+            "total_events": len(events),
+            "time_range": timeline.get("time_range"),
+            "by_hour": dict(sorted(by_hour.items())),
+            "by_day": dict(sorted(by_day.items())),
+            "by_type": dict(sorted(by_type.items(), key=lambda x: x[1], reverse=True)),
+            "busiest_hour": busiest_hour,
+            "busiest_day": busiest_day,
+        }
+
+    def correlate_events(
+        self, session_id: str, window_seconds: int = 60
+    ) -> list[dict]:
+        """
+        Group related events within time windows for attack chain detection.
+        Events within `window_seconds` of each other are grouped as clusters.
+        """
+        from collections import defaultdict
+
+        timeline = self.get_timeline(session_id)
+        events = timeline.get("events", [])
+
+        if not events:
+            return []
+
+        # Parse timestamps and sort
+        timed_events = []
+        for e in events:
+            ts_str = e.get("timestamp", "")
+            try:
+                ts = datetime.fromisoformat(ts_str)
+                timed_events.append((ts, e))
+            except (ValueError, TypeError):
+                continue
+
+        timed_events.sort(key=lambda x: x[0])
+
+        # Group into clusters
+        clusters: list[list[dict]] = []
+        current_cluster: list[dict] = []
+        last_ts = None
+
+        for ts, event in timed_events:
+            if last_ts and (ts - last_ts).total_seconds() > window_seconds:
+                if len(current_cluster) > 1:
+                    clusters.append(current_cluster)
+                current_cluster = []
+            current_cluster.append(event)
+            last_ts = ts
+
+        if len(current_cluster) > 1:
+            clusters.append(current_cluster)
+
+        return [
+            {
+                "start": cluster[0].get("timestamp"),
+                "end": cluster[-1].get("timestamp"),
+                "event_count": len(cluster),
+                "event_types": list({e.get("event_type") for e in cluster}),
+                "events": cluster[:20],  # Cap preview
+            }
+            for cluster in clusters
+        ]

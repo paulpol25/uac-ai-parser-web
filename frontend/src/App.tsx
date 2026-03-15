@@ -10,6 +10,7 @@ import { Timeline } from "@/pages/Timeline";
 import { Search } from "@/pages/Search";
 import { Export } from "@/pages/Export";
 import { Settings } from "@/pages/Settings";
+import { Analysis } from "@/pages/Analysis";
 import { useAuthStore } from "@/stores/authStore";
 
 export default function App() {
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="timeline" element={<Timeline />} />
           <Route path="search" element={<Search />} />
           <Route path="export" element={<Export />} />
+          <Route path="analysis" element={<Analysis />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
