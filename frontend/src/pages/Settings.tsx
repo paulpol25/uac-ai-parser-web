@@ -21,7 +21,7 @@ import {
   Cpu,
   Info,
 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { Spinner } from "@/components/ui/Loader";
 import { Input } from "@/components/ui/Input";
 import {
   listProviders,
@@ -122,12 +122,13 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Brain }[] = [
 
 
 interface StorageReport {
-  database_size_mb: number;
-  chromadb_size_mb: number;
-  uploads_size_mb: number;
-  total_size_mb: number;
-  warning_threshold_mb: number;
-  above_warning: boolean;
+  db_bytes: number;
+  chroma_bytes: number;
+  uploads_bytes: number;
+  total_bytes: number;
+  total_gb: number;
+  max_gb: number;
+  warning: boolean;
 }
 
 function StorageTab() {
@@ -155,32 +156,31 @@ function StorageTab() {
     },
   });
 
-  const total = report?.total_size_mb ?? 0;
-  const threshold = report?.warning_threshold_mb ?? 500;
-  const pct = threshold > 0 ? Math.min(100, (total / threshold) * 100) : 0;
+  const totalMb = (report?.total_bytes ?? 0) / (1024 * 1024);
+  const thresholdMb = (report?.max_gb ?? 5) * 1024;
+  const pct = thresholdMb > 0 ? Math.min(100, (totalMb / thresholdMb) * 100) : 0;
 
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
       <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
         <h2 className="font-semibold text-text-primary">Storage Management</h2>
         {!confirmCleanup ? (
-          <Button size="sm" variant="secondary" onClick={() => setConfirmCleanup(true)}>
+          <button className="px-3 py-1.5 text-xs font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors" onClick={() => setConfirmCleanup(true)}>
             Run Cleanup
-          </Button>
+          </button>
         ) : (
           <div className="flex items-center gap-2">
             <span className="text-xs text-text-muted">Delete expired data?</span>
-            <Button
-              size="sm"
-              variant="primary"
+            <button
+              className="px-3 py-1.5 text-xs font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-50"
               onClick={() => cleanupMutation.mutate()}
               disabled={cleanupMutation.isPending}
             >
-              {cleanupMutation.isPending ? "Cleaning..." : "Confirm"}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setConfirmCleanup(false)}>
+              {cleanupMutation.isPending ? <><Spinner className="w-3 h-3 inline mr-1" />Cleaning...</> : "Confirm"}
+            </button>
+            <button className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors" onClick={() => setConfirmCleanup(false)}>
               Cancel
-            </Button>
+            </button>
           </div>
         )}
       </div>
@@ -193,21 +193,21 @@ function StorageTab() {
             <div>
               <div className="flex items-center justify-between text-xs mb-2">
                 <span className="text-text-muted">
-                  Total: <span className="text-text-primary font-medium">{total.toFixed(1)} MB</span>
+                  Total: <span className="text-text-primary font-medium">{totalMb.toFixed(1)} MB</span>
                 </span>
                 <span className="text-text-muted">
-                  Warning at {threshold} MB
+                  Warning at {(report?.max_gb ?? 5)} GB
                 </span>
               </div>
               <div className="h-3 bg-bg-base rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    report.above_warning ? "bg-red-500" : pct > 60 ? "bg-amber-500" : "bg-brand-primary"
+                    report?.warning ? "bg-red-500" : pct > 60 ? "bg-amber-500" : "bg-brand-primary"
                   }`}
                   style={{ width: `${pct}%` }}
                 />
               </div>
-              {report.above_warning && (
+              {report?.warning && (
                 <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
                   <AlertCircle className="h-3 w-3" /> Storage above warning threshold
                 </p>
@@ -217,13 +217,13 @@ function StorageTab() {
             {/* Breakdown */}
             <div className="grid grid-cols-3 gap-4">
               {[
-                { label: "Database", value: report.database_size_mb, icon: Database, color: "text-blue-400" },
-                { label: "Embeddings (ChromaDB)", value: report.chromadb_size_mb, icon: Search, color: "text-purple-400" },
-                { label: "Uploads", value: report.uploads_size_mb, icon: HardDrive, color: "text-cyan-400" },
+                { label: "Database", value: (report?.db_bytes ?? 0) / (1024 * 1024), icon: Database, color: "text-blue-400" },
+                { label: "Embeddings (ChromaDB)", value: (report?.chroma_bytes ?? 0) / (1024 * 1024), icon: Search, color: "text-purple-400" },
+                { label: "Uploads", value: (report?.uploads_bytes ?? 0) / (1024 * 1024), icon: HardDrive, color: "text-cyan-400" },
               ].map(({ label, value, icon: Icon, color }) => (
                 <div key={label} className="bg-bg-base rounded-lg p-4 text-center">
                   <Icon className={`h-5 w-5 mx-auto mb-2 ${color}`} />
-                  <p className="text-lg font-bold text-text-primary">{value.toFixed(1)} MB</p>
+                  <p className="text-lg font-bold text-text-primary">{(value ?? 0).toFixed(1)} MB</p>
                   <p className="text-xs text-text-muted">{label}</p>
                 </div>
               ))}
@@ -376,8 +376,8 @@ export function Settings() {
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-slate-500/10 rounded-xl flex items-center justify-center">
-            <SettingsIcon className="w-5 h-5 text-slate-400" />
+          <div className="w-10 h-10 bg-brand-primary/10 rounded-xl flex items-center justify-center">
+            <SettingsIcon className="w-5 h-5 text-brand-primary" />
           </div>
           <div>
             <h1 className="text-xl font-heading font-semibold">Settings</h1>
@@ -477,9 +477,8 @@ export function Settings() {
                       </div>
                       <div className="flex items-center gap-2">
                         {!isActive && provider.configured && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
+                          <button
+                            className="px-3 py-1.5 text-xs font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-50"
                             onClick={(e) => {
                               e.stopPropagation();
                               setProviderMutation.mutate(provider.type);
@@ -487,7 +486,7 @@ export function Settings() {
                             disabled={setProviderMutation.isPending}
                           >
                             Activate
-                          </Button>
+                          </button>
                         )}
                         <ChevronDown className={`w-5 h-5 text-text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                       </div>
@@ -557,13 +556,13 @@ export function Settings() {
                                   )}
                                 </button>
                               </div>
-                              <Button
-                                size="sm"
+                              <button
+                                className="px-3 py-1.5 text-xs font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-50"
                                 onClick={() => handleSaveApiKey(provider.type)}
                                 disabled={!apiKeyInputs[provider.type] || updateConfigMutation.isPending}
                               >
                                 Save
-                              </Button>
+                              </button>
                             </div>
                           </div>
                         )}
@@ -634,14 +633,14 @@ export function Settings() {
                                 </div>
                               )}
                               {modelInputs[provider.type] && modelInputs[provider.type] !== provider.model && (
-                                <Button
-                                  size="sm"
+                                <button
+                                  className="px-3 py-1.5 text-xs font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-50"
                                   onClick={() => handleSaveModel(provider.type, modelInputs[provider.type])}
                                   disabled={updateConfigMutation.isPending}
                                 >
-                                  <Check className="w-4 h-4 mr-1" />
+                                  <Check className="w-4 h-4 inline mr-1" />
                                   Save Model
-                                </Button>
+                                </button>
                               )}
                             </div>
                           )}
@@ -649,15 +648,14 @@ export function Settings() {
 
                         {/* Test Button */}
                         <div className="pt-3 border-t border-border-subtle">
-                          <Button
-                            variant="secondary"
-                            size="sm"
+                          <button
+                            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-50"
                             onClick={() => handleTestProvider(provider.type)}
                             disabled={testProviderMutation.isPending}
                           >
-                            <RefreshCw className={`w-4 h-4 mr-1 ${testProviderMutation.isPending ? "animate-spin" : ""}`} />
+                            <RefreshCw className={`w-4 h-4 ${testProviderMutation.isPending ? "animate-spin" : ""}`} />
                             Test Connection
-                          </Button>
+                          </button>
                         </div>
                       </div>
                     )}
@@ -732,14 +730,14 @@ export function Settings() {
               <p className="text-sm text-text-muted">File limits, RAG parameters, embedding models</p>
             </div>
             {processingDirty && (
-              <Button
-                size="sm"
+              <button
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-50"
                 onClick={handleSaveProcessingSettings}
                 disabled={updateProcessingMutation.isPending}
               >
-                <Save className="w-4 h-4 mr-1" />
+                <Save className="w-4 h-4" />
                 Save Changes
-              </Button>
+              </button>
             )}
           </div>
           

@@ -10,13 +10,12 @@ import {
   FileText,
   ChevronDown,
   ChevronUp,
-  RefreshCw,
   Layers,
   Clock,
   Tag,
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
+import { Spinner } from "@/components/ui/Loader";
 import { Input } from "@/components/ui/Input";
 import { previewContext, type ChunkPreview } from "@/services/api";
 
@@ -129,17 +128,17 @@ export function ContextPreview({ sessionId, currentQuery, onQueryChange }: Conte
             onKeyDown={(e) => e.key === "Enter" && handlePreview()}
             className="text-sm"
           />
-          <Button
-            size="sm"
+          <button
             onClick={handlePreview}
             disabled={!previewQuery.trim() || isLoading}
+            className="p-2 text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-50"
           >
             {isLoading ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
+              <Spinner className="w-4 h-4" />
             ) : (
               <Search className="w-4 h-4" />
             )}
-          </Button>
+          </button>
         </div>
 
         {/* Results */}

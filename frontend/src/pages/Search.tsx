@@ -16,7 +16,7 @@ import {
   Sparkles,
   X
 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { Spinner } from "@/components/ui/Loader";
 import { Input } from "@/components/ui/Input";
 import { ScrollToTop } from "@/components/ui/ScrollToTop";
 import { useInvestigationStore } from "@/stores/investigationStore";
@@ -160,7 +160,7 @@ function ResultCard({
                 </span>
               )}
               {result.section && (
-                <span className="px-2 py-0.5 bg-slate-500/10 text-slate-400 rounded-full">
+                <span className="px-2 py-0.5 bg-text-muted/10 text-text-muted rounded-full">
                   {result.section}
                 </span>
               )}
@@ -213,14 +213,13 @@ function ResultCard({
         )}
         {isExpanded && (
           <div className="mt-3 flex gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
+            <button
               onClick={() => onAskAI(result)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover hover:text-text-primary transition-colors"
             >
-              <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+              <Sparkles className="w-3.5 h-3.5" />
               Ask AI About This
-            </Button>
+            </button>
           </div>
         )}
       </div>
@@ -324,8 +323,7 @@ export function Search() {
   };
 
   const handleAskAI = (result: SearchResult) => {
-    const preview = result.content.slice(0, 300);
-    const question = `Analyze this log entry from ${result.source_file}:\n\n${preview}${result.content.length > 300 ? '...' : ''}`;
+    const question = `Analyze this log entry from ${result.source_file}:\n\n${result.content}`;
     navigate(`/query?q=${encodeURIComponent(question)}`);
   };
 
@@ -343,10 +341,10 @@ export function Search() {
               Select an investigation to search through its parsed logs and artifacts.
             </p>
           </div>
-          <Button onClick={() => navigate("/investigations")}>
-            <FolderOpen className="w-4 h-4 mr-2" />
+          <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => navigate("/investigations")}>
+            <FolderOpen className="w-4 h-4" />
             Go to Investigations
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -366,9 +364,9 @@ export function Search() {
               Upload and parse a UAC archive to search through logs. Go to the Dashboard to upload files.
             </p>
           </div>
-          <Button onClick={() => navigate("/")}>
+          <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => navigate("/")}>
             Go to Dashboard
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -422,10 +420,10 @@ export function Search() {
             )}
           </div>
           
-          <Button size="sm" className="h-8 text-xs px-3" onClick={handleSearch} disabled={isLoading}>
-            <SearchIcon className="w-3.5 h-3.5 mr-1" />
+          <button className="flex items-center gap-1 h-8 px-3 text-xs font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-50" onClick={handleSearch} disabled={isLoading}>
+            <SearchIcon className="w-3.5 h-3.5" />
             Search
-          </Button>
+          </button>
 
           {/* Filter Dropdowns */}
           {filterOptions && (
@@ -435,7 +433,7 @@ export function Search() {
                 onChange={(e) => { setSourceTypeFilter(e.target.value); setPage(1); }}
                 className="px-2 py-1.5 bg-bg-base border border-border-default rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
               >
-                <option value="">All Types</option>
+                <option value="">Source Type</option>
                 {filterOptions.source_types.map(type => (
                   <option key={type} value={type}>{type}</option>
                 ))}
@@ -446,7 +444,7 @@ export function Search() {
                 onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
                 className="px-2 py-1.5 bg-bg-base border border-border-default rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
               >
-                <option value="">All Categories</option>
+                <option value="">Artifact Category</option>
                 {filterOptions.artifact_categories.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
@@ -455,10 +453,8 @@ export function Search() {
           )}
 
           {(sourceTypeFilter || categoryFilter || activeQuery) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs px-2"
+            <button
+              className="h-8 px-2 text-xs text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-hover transition-colors"
               onClick={() => { 
                 setSourceTypeFilter(""); 
                 setCategoryFilter(""); 
@@ -468,7 +464,7 @@ export function Search() {
               }}
             >
               <X className="w-3.5 h-3.5" />
-            </Button>
+            </button>
           )}
         </div>
       </div>
@@ -512,8 +508,8 @@ export function Search() {
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
-            <p className="text-text-secondary">Searching logs...</p>
+            <Spinner className="w-6 h-6 text-brand-primary" />
+            <p className="text-text-secondary text-sm">Searching logs...</p>
           </div>
         </div>
       ) : isError ? (
@@ -541,25 +537,23 @@ export function Search() {
             </span>
             {data.pages > 1 && (
               <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
+                <button
                   disabled={!data.has_prev}
                   onClick={() => setPage(p => p - 1)}
+                  className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft className="w-4 h-4" />
-                </Button>
+                </button>
                 <span className="text-sm text-text-secondary">
                   Page {data.page} of {data.pages}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
+                <button
                   disabled={!data.has_next}
                   onClick={() => setPage(p => p + 1)}
+                  className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="w-4 h-4" />
-                </Button>
+                </button>
               </div>
             )}
           </div>
@@ -635,24 +629,22 @@ export function Search() {
           {/* Bottom pagination */}
           {data.pages > 1 && (
             <div className="flex justify-center gap-2 pt-4 border-t border-border-subtle">
-              <Button
-                variant="secondary"
-                size="sm"
+              <button
                 disabled={!data.has_prev}
                 onClick={() => setPage(p => p - 1)}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <ChevronLeft className="w-4 h-4 mr-1" />
+                <ChevronLeft className="w-4 h-4" />
                 Previous
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
+              </button>
+              <button
                 disabled={!data.has_next}
                 onClick={() => setPage(p => p + 1)}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           )}
         </>

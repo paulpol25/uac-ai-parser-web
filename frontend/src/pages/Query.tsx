@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Send, Sparkles, AlertTriangle, FileText, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose, FolderOpen, Database, ChevronDown, Shield, Keyboard, Bot, Zap, Plus, MessageSquare, Trash2, Info, Check, Wand2 } from "lucide-react";
 import { useFocusShortcut } from "@/hooks/useKeyboardShortcuts";
-import { Button } from "@/components/ui/Button";
+import { cn } from "@/utils/cn";
+import { Spinner } from "@/components/ui/Loader";
 import { Textarea } from "@/components/ui/Input";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useInvestigationStore } from "@/stores/investigationStore";
@@ -42,6 +43,7 @@ export function Query() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isSubmittingRef = useRef(false);
   const { sessionId, setSession, clearSession } = useSessionStore();
 
   // Handle URL query parameter (from Timeline "Ask AI" button)
@@ -125,9 +127,9 @@ export function Query() {
     staleTime: 10000,
   });
 
-  // Load chat messages when a chat is selected
+  // Load chat messages when a chat is selected (but not during active submission)
   useEffect(() => {
-    if (currentChatId) {
+    if (currentChatId && !isSubmittingRef.current) {
       getChat(currentChatId).then((chat) => {
         setMessages(
           chat.messages.map((msg) => ({
@@ -203,6 +205,7 @@ export function Query() {
     setIsStreaming(true);
     setCurrentStreamContent(""); // Reset stream tracking
     resetAgentProgress(); // Reset agent progress
+    isSubmittingRef.current = true;
 
     // Create chat if needed
     let chatId = currentChatId;
@@ -259,6 +262,17 @@ export function Query() {
         );
       }, history, investigationContext || undefined);
       
+      // Ensure the final accumulated content is committed
+      // (guards against batching edge cases where incremental updates
+      //  haven't flushed to state before setIsStreaming(false) runs)
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantId
+            ? { ...msg, content: fullResponse }
+            : msg
+        )
+      );
+      
       // Save assistant response to chat
       if (chatId && fullResponse) {
         try {
@@ -278,6 +292,7 @@ export function Query() {
     } finally {
       setIsStreaming(false);
       setCurrentStreamContent("");
+      isSubmittingRef.current = false;
     }
   };
 
@@ -403,50 +418,49 @@ export function Query() {
 
   if (!effectiveSessionId) {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8">
-        <div className="max-w-lg w-full text-center">
-          <div className="w-16 h-16 mx-auto bg-brand-primary/10 rounded-2xl flex items-center justify-center mb-6">
-            <Sparkles className="w-8 h-8 text-brand-primary" />
+      <div className="h-full flex flex-col items-center justify-center p-6">
+        <div className="max-w-md w-full text-center">
+          <div className="w-12 h-12 mx-auto bg-brand-primary/10 rounded-xl flex items-center justify-center mb-4">
+            <Sparkles className="w-6 h-6 text-brand-primary" />
           </div>
-          <h2 className="font-heading font-semibold text-2xl mb-2">
+          <h2 className="font-heading font-semibold text-xl mb-1">
             AI Analysis
           </h2>
-          <p className="text-text-secondary mb-8">
+          <p className="text-text-secondary text-sm mb-6">
             Ask questions about your forensic data using AI-powered analysis.
           </p>
-        
 
           {/* Investigation Selector */}
-          <div className="bg-bg-surface border border-border-subtle rounded-xl p-6 text-left space-y-4">
+          <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 text-left space-y-4">
             <div>
-              <label className="block text-sm font-medium text-text-secondary mb-2">
+              <label className="block text-xs font-medium uppercase tracking-wider text-text-muted mb-2">
                 1. Select Investigation
               </label>
               <div className="relative">
                 <button
                   onClick={() => setShowInvestigationSelector(!showInvestigationSelector)}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-bg-base border border-border-default rounded-lg hover:border-brand-primary transition-colors text-left"
+                  className="w-full flex items-center justify-between px-3 py-2.5 bg-bg-elevated border border-border-default rounded-lg hover:border-brand-primary/50 transition-colors text-left"
                 >
                   {selectedInvestigation ? (
-                    <div className="flex items-center gap-3">
-                      <FolderOpen className="w-5 h-5 text-brand-primary" />
+                    <div className="flex items-center gap-2.5">
+                      <FolderOpen className="w-4 h-4 text-brand-primary" />
                       <div>
-                        <p className="font-medium text-text-primary">{selectedInvestigation.name}</p>
-                        <p className="text-xs text-text-muted">
+                        <p className="text-sm font-medium text-text-primary">{selectedInvestigation.name}</p>
+                        <p className="text-[10px] text-text-muted">
                           {selectedInvestigation.session_count} session{selectedInvestigation.session_count !== 1 ? "s" : ""}
                         </p>
                       </div>
                     </div>
                   ) : (
-                    <span className="text-text-muted">Select an investigation...</span>
+                    <span className="text-sm text-text-muted">Select an investigation...</span>
                   )}
-                  <ChevronDown className={`w-5 h-5 text-text-muted transition-transform ${showInvestigationSelector ? "rotate-180" : ""}`} />
+                  <ChevronDown className={cn("w-4 h-4 text-text-muted transition-transform", showInvestigationSelector && "rotate-180")} />
                 </button>
 
                 {showInvestigationSelector && (
-                  <div className="absolute z-10 w-full mt-2 bg-bg-surface border border-border-default rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                  <div className="absolute z-10 w-full mt-1 bg-bg-surface border border-border-default rounded-lg shadow-xl max-h-56 overflow-y-auto">
                     {investigations.length === 0 ? (
-                      <div className="p-4 text-center text-text-muted">
+                      <div className="p-3 text-center text-sm text-text-muted">
                         No investigations found
                       </div>
                     ) : (
@@ -458,14 +472,15 @@ export function Query() {
                             setSelectedSession(null);
                             setShowInvestigationSelector(false);
                           }}
-                          className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-bg-hover text-left ${
-                            selectedInvestigation?.id === inv.id ? "bg-brand-primary/10" : ""
-                          }`}
+                          className={cn(
+                            "w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-bg-hover text-left text-sm",
+                            selectedInvestigation?.id === inv.id && "bg-brand-primary/10"
+                          )}
                         >
-                          <FolderOpen className="w-5 h-5 text-brand-primary" />
+                          <FolderOpen className="w-4 h-4 text-brand-primary" />
                           <div>
                             <p className="font-medium text-text-primary">{inv.name}</p>
-                            <p className="text-xs text-text-muted">
+                            <p className="text-[10px] text-text-muted">
                               {inv.session_count} session{inv.session_count !== 1 ? "s" : ""} · {inv.case_number || "No case number"}
                             </p>
                           </div>
@@ -480,35 +495,39 @@ export function Query() {
             {/* Sessions List */}
             {selectedInvestigation && (
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">
+                <label className="block text-xs font-medium uppercase tracking-wider text-text-muted mb-2">
                   2. Select Session
                 </label>
                 {loadingDetail ? (
-                  <div className="p-4 text-center text-text-muted">Loading sessions...</div>
+                  <div className="flex items-center justify-center gap-2 p-4 text-text-muted text-sm">
+                    <Spinner className="w-4 h-4" /> Loading sessions...
+                  </div>
                 ) : investigationDetail?.sessions && investigationDetail.sessions.length > 0 ? (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {investigationDetail.sessions.map((session) => (
                       <button
                         key={session.id}
                         onClick={() => handleSelectSession(session)}
-                        className={`w-full flex items-center gap-3 p-4 border rounded-lg text-left transition-colors ${
+                        className={cn(
+                          "w-full flex items-center gap-2.5 p-3 border rounded-lg text-left transition-colors text-sm",
                           session.status === "ready"
-                            ? "border-border-default hover:border-brand-primary hover:bg-brand-primary/5"
-                            : "border-border-subtle opacity-60 cursor-not-allowed"
-                        } ${selectedSession?.id === session.id ? "border-brand-primary bg-brand-primary/5" : ""}`}
+                            ? "border-border-default hover:border-brand-primary/50 hover:bg-brand-primary/5"
+                            : "border-border-subtle opacity-50 cursor-not-allowed",
+                          selectedSession?.id === session.id && "border-brand-primary bg-brand-primary/5"
+                        )}
                         disabled={session.status !== "ready"}
                       >
-                        <Database className={`w-5 h-5 ${session.status === "ready" ? "text-brand-primary" : "text-text-muted"}`} />
+                        <Database className={cn("w-4 h-4", session.status === "ready" ? "text-brand-primary" : "text-text-muted")} />
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-text-primary truncate">
+                          <p className="font-medium text-text-primary truncate text-sm">
                             {session.original_filename}
                           </p>
-                          <p className="text-xs text-text-muted">
+                          <p className="text-[10px] text-text-muted">
                             {session.total_artifacts} artifacts · {session.hostname || "Unknown host"} · {session.os_type || "Unknown OS"}
                           </p>
                         </div>
                         {session.status !== "ready" && (
-                          <span className="text-xs px-2 py-1 bg-amber-500/10 text-amber-500 rounded">
+                          <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-500 rounded font-medium">
                             {session.status}
                           </span>
                         )}
@@ -516,7 +535,7 @@ export function Query() {
                     ))}
                   </div>
                 ) : (
-                  <div className="p-4 text-center text-text-muted border border-border-default rounded-lg">
+                  <div className="p-3 text-center text-sm text-text-muted border border-border-default rounded-lg">
                     No sessions in this investigation. Upload a file from the Dashboard.
                   </div>
                 )}
@@ -524,13 +543,16 @@ export function Query() {
             )}
 
             {/* Or go to Dashboard */}
-            <div className="text-center pt-4 border-t border-border-subtle">
-              <p className="text-sm text-text-muted mb-3">
+            <div className="text-center pt-3 border-t border-border-subtle">
+              <p className="text-xs text-text-muted mb-2">
                 Don't have any data yet?
               </p>
-              <Button variant="secondary" onClick={() => (window.location.href = "/")}>
+              <button
+                onClick={() => (window.location.href = "/")}
+                className="px-4 py-2 text-sm font-medium text-text-secondary bg-bg-elevated border border-border-default rounded-lg hover:bg-bg-hover hover:text-text-primary transition-colors"
+              >
                 Go to Dashboard to Upload
-              </Button>
+              </button>
             </div>
           </div>
         </div>
@@ -541,40 +563,41 @@ export function Query() {
   return (
     <div className="flex h-full overflow-hidden">
       {/* Left Sidebar - Chat History */}
-      <div className={`${
-        showChatList ? "w-56" : "w-0"
-      } transition-all duration-300 flex-shrink-0 border-r border-border-subtle bg-bg-elevated overflow-hidden`}>
-        <div className="w-56 h-full flex flex-col">
-          <div className="p-3 border-b border-border-subtle flex-shrink-0">
-            <Button
+      <div className={cn(
+        "transition-all duration-300 flex-shrink-0 border-r border-border-subtle bg-bg-elevated overflow-hidden",
+        showChatList ? "w-52" : "w-0"
+      )}>
+        <div className="w-52 h-full flex flex-col">
+          <div className="p-2 border-b border-border-subtle flex-shrink-0">
+            <button
               onClick={handleNewChat}
-              className="w-full justify-center"
-              size="sm"
+              className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium bg-brand-primary/10 text-brand-primary rounded-lg hover:bg-brand-primary/20 transition-colors"
             >
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="w-3.5 h-3.5" />
               New Chat
-            </Button>
+            </button>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
+          <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 min-h-0">
             {chatsData?.chats.map((chat: ChatSummary) => (
               <button
                 key={chat.id}
                 onClick={() => handleSelectChat(chat.id)}
-                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm transition-colors group ${
+                className={cn(
+                  "w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors group",
                   currentChatId === chat.id 
-                    ? "bg-brand-primary/10 text-text-primary border border-brand-primary/30" 
+                    ? "bg-brand-primary/10 text-text-primary border border-brand-primary/20" 
                     : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-                }`}
+                )}
               >
-                <MessageSquare className="w-4 h-4 shrink-0" />
+                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate flex-1 text-left">{chat.title}</span>
                 <span
                   role="button"
                   tabIndex={0}
                   onClick={(e) => handleDeleteChat(chat.id, e)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDeleteChat(chat.id, e as unknown as React.MouseEvent); }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:text-status-error transition-opacity cursor-pointer"
+                  className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-status-error transition-opacity cursor-pointer"
                   title="Delete chat"
                 >
                   <Trash2 className="w-3 h-3" />
@@ -583,9 +606,9 @@ export function Query() {
             ))}
             
             {chatsData?.chats.length === 0 && (
-              <div className="text-center py-6">
-                <MessageSquare className="w-6 h-6 mx-auto mb-2 text-text-muted/50" />
-                <p className="text-xs text-text-muted">
+              <div className="text-center py-4">
+                <MessageSquare className="w-5 h-5 mx-auto mb-1.5 text-text-muted/40" />
+                <p className="text-[10px] text-text-muted">
                   No chats yet
                 </p>
               </div>
@@ -593,18 +616,18 @@ export function Query() {
           </div>
           
           {/* Investigation/Session selector at bottom */}
-          <div className="p-2 border-t border-border-subtle flex-shrink-0">
+          <div className="p-1.5 border-t border-border-subtle flex-shrink-0">
             <button
               onClick={() => setShowInvestigationSelector(!showInvestigationSelector)}
-              className="w-full flex items-center gap-2 p-2 rounded-lg bg-bg-surface border border-border-subtle hover:border-border-default transition-colors text-left text-xs"
+              className="w-full flex items-center gap-2 p-2 rounded-lg bg-bg-surface border border-border-subtle hover:border-border-default transition-colors text-left text-[10px]"
             >
-              <FolderOpen className="w-3.5 h-3.5 text-brand-primary shrink-0" />
+              <FolderOpen className="w-3 h-3 text-brand-primary shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-text-primary truncate">
+                <p className="font-medium text-text-primary truncate text-xs">
                   {selectedInvestigation?.name || "Select Investigation"}
                 </p>
               </div>
-              <ChevronDown className={`w-3.5 h-3.5 text-text-muted transition-transform ${showInvestigationSelector ? "rotate-180" : ""}`} />
+              <ChevronDown className={cn("w-3 h-3 text-text-muted transition-transform", showInvestigationSelector && "rotate-180")} />
             </button>
           </div>
         </div>
@@ -613,62 +636,65 @@ export function Query() {
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Top Bar */}
-        <div className="h-12 border-b border-border-subtle flex items-center justify-between px-4 bg-bg-surface flex-shrink-0">
+        <div className="h-11 border-b border-border-subtle flex items-center justify-between px-3 bg-bg-surface/80 backdrop-blur-sm flex-shrink-0">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowChatList(!showChatList)}
-              className="p-2 rounded-lg hover:bg-bg-hover transition-colors text-text-muted hover:text-text-primary"
+              className="p-1.5 rounded-lg hover:bg-bg-hover transition-colors text-text-muted hover:text-text-primary"
               title={showChatList ? "Hide sidebar" : "Show sidebar"}
             >
-              {showChatList ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
+              {showChatList ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
             </button>
             
-            <div className="h-6 w-px bg-border-subtle" />
+            <div className="h-5 w-px bg-border-subtle" />
             
             {/* Mode Toggle */}
-            <div className="flex items-center bg-bg-elevated rounded-lg p-1 border border-border-subtle">
+            <div className="flex items-center bg-bg-elevated rounded-lg p-0.5 border border-border-subtle">
               <button
                 onClick={() => setUseAgentic(false)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                className={cn(
+                  "flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all",
                   !useAgentic 
                     ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm" 
                     : "text-text-muted hover:text-text-primary"
-                }`}
+                )}
                 title="Fast mode - single RAG query, quicker responses"
               >
-                <Zap className="w-3.5 h-3.5" />
+                <Zap className="w-3 h-3" />
                 Fast
               </button>
               <button
                 onClick={() => setUseAgentic(true)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                className={cn(
+                  "flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all",
                   useAgentic 
                     ? "bg-gradient-to-r from-brand-primary to-purple-500 text-white shadow-sm" 
                     : "text-text-muted hover:text-text-primary"
-                }`}
+                )}
                 title="Agent mode - multi-step investigation, thorough analysis"
               >
-                <Bot className="w-3.5 h-3.5" />
+                <Bot className="w-3 h-3" />
                 Agent
               </button>
             </div>
             
-            <span className="text-xs text-text-muted hidden sm:block">
+            <span className="text-[10px] text-text-muted hidden sm:block">
               {useAgentic ? "Multi-step investigation" : "Quick single query"}
             </span>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => setShowContext(!showContext)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-sm ${
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors text-xs",
                 showContext 
-                  ? "bg-brand-primary/10 text-brand-primary border border-brand-primary/30" 
+                  ? "bg-brand-primary/10 text-brand-primary border border-brand-primary/20" 
                   : "hover:bg-bg-hover text-text-muted hover:text-text-primary border border-transparent"
-              }`}
+              )}
               title={showContext ? "Hide context" : "Show context"}
             >
-              {showContext ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+              {showContext ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
               <span className="hidden sm:inline">Context</span>
             </button>
           </div>
@@ -676,18 +702,18 @@ export function Query() {
 
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto px-4 lg:px-6 min-h-0">
-          <div className="max-w-3xl mx-auto py-4 space-y-4">
+          <div className="max-w-3xl mx-auto py-3 space-y-3">
             {messages.length === 0 ? (
-              <div className="space-y-4 py-4">
+              <div className="space-y-3 py-3">
                 {/* Welcome Message */}
                 <div className="text-center">
-                  <div className="w-12 h-12 mx-auto mb-2 rounded-xl bg-gradient-to-br from-brand-primary/20 to-purple-500/20 flex items-center justify-center">
-                    <Sparkles className="w-6 h-6 text-brand-primary" />
+                  <div className="w-10 h-10 mx-auto mb-2 rounded-lg bg-gradient-to-br from-brand-primary/20 to-purple-500/20 flex items-center justify-center border border-brand-primary/10">
+                    <Sparkles className="w-5 h-5 text-brand-primary" />
                   </div>
-                  <h2 className="text-base font-semibold text-text-primary mb-1">
+                  <h2 className="text-sm font-semibold text-text-primary mb-0.5">
                     How can I help with your investigation?
                   </h2>
-                  <p className="text-xs text-text-muted max-w-md mx-auto">
+                  <p className="text-[11px] text-text-muted max-w-sm mx-auto">
                     Ask questions about your forensic data. {useAgentic ? "Agent mode investigates step-by-step." : "Fast mode provides quick answers."}
                   </p>
                 </div>
@@ -732,42 +758,42 @@ export function Query() {
         </div>
 
         {/* Input Area - Floating at bottom */}
-        <div className="border-t border-border-subtle bg-bg-surface/80 backdrop-blur-sm p-3 flex-shrink-0">
+        <div className="border-t border-border-subtle bg-bg-surface/80 backdrop-blur-sm p-2.5 flex-shrink-0">
           <div className="max-w-3xl mx-auto">
             {/* Actions and Context Row */}
-            <div className="mb-2 flex items-center gap-2 text-xs">
+            <div className="mb-1.5 flex items-center gap-1.5 text-[10px]">
               {/* Actions Dropdown */}
               <div className="relative">
                 <button
                   onClick={() => setShowActionsMenu(!showActionsMenu)}
                   disabled={isStreaming}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-bg-elevated text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-bg-elevated text-text-muted hover:text-text-primary transition-colors disabled:opacity-50"
                 >
                   <Wand2 className="w-3 h-3" />
                   <span>Actions</span>
-                  <ChevronDown className="w-3 h-3" />
+                  <ChevronDown className="w-2.5 h-2.5" />
                 </button>
                 {showActionsMenu && (
-                  <div className="absolute bottom-full left-0 mb-1 bg-bg-surface border border-border-subtle rounded-lg shadow-lg py-1 min-w-[160px] z-10">
+                  <div className="absolute bottom-full left-0 mb-1 bg-bg-surface border border-border-subtle rounded-lg shadow-xl py-0.5 min-w-[150px] z-10">
                     <button
                       onClick={() => { handleQuickAction("summary"); setShowActionsMenu(false); }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors text-left"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors text-left"
                     >
-                      <FileText className="w-4 h-4" />
+                      <FileText className="w-3.5 h-3.5" />
                       Generate Summary
                     </button>
                     <button
                       onClick={() => { handleQuickAction("anomalies"); setShowActionsMenu(false); }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors text-left"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors text-left"
                     >
-                      <AlertTriangle className="w-4 h-4" />
+                      <AlertTriangle className="w-3.5 h-3.5" />
                       Detect Anomalies
                     </button>
                     <button
                       onClick={() => { handleQuickAction("iocs"); setShowActionsMenu(false); }}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors text-left"
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary hover:bg-bg-hover transition-colors text-left"
                     >
-                      <Shield className="w-4 h-4" />
+                      <Shield className="w-3.5 h-3.5" />
                       Extract IOCs
                     </button>
                   </div>
@@ -777,25 +803,26 @@ export function Query() {
               {/* Investigation Context Toggle */}
               <button
                 onClick={() => setShowContextInput(true)}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-full transition-colors ${
+                className={cn(
+                  "flex items-center gap-1 px-2 py-0.5 rounded-full transition-colors",
                   investigationContext 
                     ? "bg-brand-primary/10 text-brand-primary" 
                     : "bg-bg-elevated text-text-muted hover:text-text-primary"
-                }`}
+                )}
               >
                 <Info className="w-3 h-3" />
                 <span>{investigationContext ? "Context provided" : "Add context"}</span>
               </button>
             </div>
             
-            <form onSubmit={handleSubmit} className="flex gap-3">
+            <form onSubmit={handleSubmit} className="flex gap-2">
               <div className="relative flex-1">
                 <Textarea
                   ref={textareaRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Ask about your forensic data..."
-                  className="resize-none min-h-[52px] max-h-32 pr-24 rounded-xl border-border-default focus:border-brand-primary"
+                  className="resize-none min-h-[44px] max-h-28 pr-24 rounded-lg border-border-default focus:border-brand-primary text-sm"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.ctrlKey || e.metaKey || !e.shiftKey)) {
                       e.preventDefault();
@@ -804,19 +831,18 @@ export function Query() {
                   }}
                   rows={1}
                 />
-                <div className="absolute right-3 bottom-3 flex items-center gap-2">
-                  <span className="text-xs text-text-muted hidden sm:flex items-center gap-1">
-                    <Keyboard className="w-3 h-3" />
+                <div className="absolute right-2.5 bottom-2.5 flex items-center gap-1.5">
+                  <span className="text-[10px] text-text-muted hidden sm:flex items-center gap-0.5">
+                    <Keyboard className="w-2.5 h-2.5" />
                     Enter
                   </span>
-                  <Button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     disabled={!input.trim() || isStreaming}
-                    size="sm"
-                    className="rounded-lg"
+                    className="p-1.5 rounded-md bg-brand-primary text-white hover:bg-brand-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
-                    <Send className="w-4 h-4" />
-                  </Button>
+                    {isStreaming ? <Spinner className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
             </form>
@@ -825,22 +851,22 @@ export function Query() {
         
         {/* Context Input Modal */}
         {showContextInput && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowContextInput(false)}>
-            <div className="bg-bg-surface rounded-xl p-6 max-w-lg w-full mx-4 shadow-xl" onClick={e => e.stopPropagation()}>
-              <h3 className="font-semibold text-text-primary mb-2">Investigation Context</h3>
-              <p className="text-sm text-text-muted mb-4">Provide background information to help the AI understand the incident better.</p>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowContextInput(false)}>
+            <div className="bg-bg-surface rounded-xl p-5 max-w-lg w-full mx-4 shadow-2xl border border-border-subtle" onClick={e => e.stopPropagation()}>
+              <h3 className="font-semibold text-text-primary text-sm mb-1">Investigation Context</h3>
+              <p className="text-xs text-text-muted mb-3">Provide background information to help the AI understand the incident better.</p>
               <textarea
                 value={investigationContext}
                 onChange={(e) => setInvestigationContext(e.target.value)}
                 placeholder="Example: This is a compromised Linux web server. The attacker gained initial access via SSH brute force around 2024-01-15. We suspect data exfiltration and possible lateral movement."
-                className="w-full h-32 px-3 py-2 text-sm bg-bg-elevated border border-border-subtle rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand-primary/50 placeholder:text-text-muted"
+                className="w-full h-28 px-3 py-2 text-sm bg-bg-elevated border border-border-subtle rounded-lg resize-none focus:outline-none focus:ring-1 focus:ring-brand-primary/50 placeholder:text-text-muted"
               />
-              <div className="flex justify-end gap-2 mt-4">
-                <Button variant="ghost" onClick={() => setShowContextInput(false)}>Cancel</Button>
-                <Button onClick={() => setShowContextInput(false)}>
-                  <Check className="w-4 h-4 mr-2" />
+              <div className="flex justify-end gap-2 mt-3">
+                <button onClick={() => setShowContextInput(false)} className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors">Cancel</button>
+                <button onClick={() => setShowContextInput(false)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors">
+                  <Check className="w-3 h-3" />
                   Save
-                </Button>
+                </button>
               </div>
             </div>
           </div>
@@ -848,14 +874,14 @@ export function Query() {
         
         {/* Investigation Selector Modal */}
         {showInvestigationSelector && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowInvestigationSelector(false)}>
-            <div className="bg-bg-surface rounded-xl max-w-md w-full mx-4 shadow-xl max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="p-4 border-b border-border-subtle">
-                <h3 className="font-semibold text-text-primary">Select Data Source</h3>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowInvestigationSelector(false)}>
+            <div className="bg-bg-surface rounded-xl max-w-md w-full mx-4 shadow-2xl border border-border-subtle max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="p-3 border-b border-border-subtle">
+                <h3 className="font-semibold text-text-primary text-sm">Select Data Source</h3>
               </div>
               <div className="flex-1 overflow-y-auto">
-                <div className="p-2">
-                  <p className="text-xs font-medium text-text-muted uppercase px-2 py-1">Investigations</p>
+                <div className="p-1.5">
+                  <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider px-2 py-1">Investigations</p>
                   {investigations.filter(inv => inv.status === "active").map((inv) => (
                     <button
                       key={inv.id}
@@ -863,20 +889,21 @@ export function Query() {
                         setSelectedInvestigation(inv);
                         setSelectedSession(null);
                       }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-bg-hover text-left text-sm ${
-                        selectedInvestigation?.id === inv.id ? "bg-brand-primary/10" : ""
-                      }`}
+                      className={cn(
+                        "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-bg-hover text-left text-xs",
+                        selectedInvestigation?.id === inv.id && "bg-brand-primary/10"
+                      )}
                     >
-                      <FolderOpen className="w-4 h-4 text-brand-primary shrink-0" />
+                      <FolderOpen className="w-3.5 h-3.5 text-brand-primary shrink-0" />
                       <span className="truncate">{inv.name}</span>
-                      {selectedInvestigation?.id === inv.id && <Check className="w-4 h-4 text-brand-primary ml-auto" />}
+                      {selectedInvestigation?.id === inv.id && <Check className="w-3.5 h-3.5 text-brand-primary ml-auto" />}
                     </button>
                   ))}
                 </div>
                 
                 {selectedInvestigation && investigationDetail?.sessions && (
-                  <div className="p-2 border-t border-border-subtle">
-                    <p className="text-xs font-medium text-text-muted uppercase px-2 py-1">Sessions</p>
+                  <div className="p-1.5 border-t border-border-subtle">
+                    <p className="text-[10px] font-medium text-text-muted uppercase tracking-wider px-2 py-1">Sessions</p>
                     {investigationDetail.sessions.map((session) => (
                       <button
                         key={session.id}
@@ -885,25 +912,27 @@ export function Query() {
                           setShowInvestigationSelector(false);
                         }}
                         disabled={session.status !== "ready"}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-bg-hover text-left text-sm ${
-                          selectedSession?.id === session.id ? "bg-brand-primary/10" : ""
-                        } ${session.status !== "ready" ? "opacity-50 cursor-not-allowed" : ""}`}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-bg-hover text-left text-xs",
+                          selectedSession?.id === session.id && "bg-brand-primary/10",
+                          session.status !== "ready" && "opacity-50 cursor-not-allowed"
+                        )}
                       >
-                        <Database className="w-4 h-4 text-text-muted shrink-0" />
+                        <Database className="w-3.5 h-3.5 text-text-muted shrink-0" />
                         <div className="truncate flex-1">
                           <p className="truncate">{session.original_filename}</p>
-                          <p className="text-xs text-text-muted">{session.total_artifacts} artifacts</p>
+                          <p className="text-[10px] text-text-muted">{session.total_artifacts} artifacts</p>
                         </div>
-                        {selectedSession?.id === session.id && <Check className="w-4 h-4 text-brand-primary" />}
+                        {selectedSession?.id === session.id && <Check className="w-3.5 h-3.5 text-brand-primary" />}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
-              <div className="p-4 border-t border-border-subtle">
-                <Button variant="ghost" className="w-full" onClick={() => setShowInvestigationSelector(false)}>
+              <div className="p-3 border-t border-border-subtle">
+                <button onClick={() => setShowInvestigationSelector(false)} className="w-full py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors">
                   Close
-                </Button>
+                </button>
               </div>
             </div>
           </div>
@@ -911,10 +940,11 @@ export function Query() {
       </div>
 
       {/* Right Sidebar - Context Preview */}
-      <div className={`${
-        showContext ? "w-80" : "w-0"
-      } transition-all duration-300 flex-shrink-0 border-l border-border-subtle overflow-hidden`}>
-        <div className="w-80 h-full overflow-y-auto p-3 space-y-3">
+      <div className={cn(
+        "transition-all duration-300 flex-shrink-0 border-l border-border-subtle overflow-hidden",
+        showContext ? "w-72" : "w-0"
+      )}>
+        <div className="w-72 h-full overflow-y-auto p-2.5 space-y-2.5">
           <SessionInfoPanel sessionId={effectiveSessionId} />
           <ContextPreview sessionId={effectiveSessionId} currentQuery={input} />
         </div>

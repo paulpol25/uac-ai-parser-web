@@ -4,7 +4,6 @@
 import { Component, type ReactNode } from "react";
 import { AlertTriangle, RefreshCw, Home, Bug } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -73,19 +72,19 @@ export function ErrorDisplay({
           <p className="text-sm text-text-secondary mb-6 max-w-md">{message}</p>
           <div className="flex gap-3">
             {onRetry && (
-              <Button onClick={onRetry} variant="secondary">
-                <RefreshCw className="w-4 h-4 mr-2" />
+              <button onClick={onRetry} className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors">
+                <RefreshCw className="w-4 h-4" />
                 Try Again
-              </Button>
+              </button>
             )}
             {showHomeButton && (
-              <Button
-                variant="ghost"
+              <button
                 onClick={() => (window.location.href = "/")}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
               >
-                <Home className="w-4 h-4 mr-2" />
+                <Home className="w-4 h-4" />
                 Go Home
-              </Button>
+              </button>
             )}
           </div>
         </div>
@@ -156,9 +155,9 @@ export function ApiError({ error, onRetry }: ApiErrorProps) {
         <p className="text-sm text-text-secondary mt-1">{message}</p>
       </div>
       {onRetry && (
-        <Button size="sm" variant="ghost" onClick={onRetry}>
+        <button className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors" onClick={onRetry}>
           <RefreshCw className="w-4 h-4" />
-        </Button>
+        </button>
       )}
     </div>
   );

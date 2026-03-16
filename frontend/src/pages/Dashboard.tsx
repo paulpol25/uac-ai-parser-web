@@ -16,9 +16,12 @@ import {
   Activity,
   Layers,
   RefreshCw,
+  Shield,
+  Terminal,
 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { cn } from "@/utils/cn";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { Spinner } from "@/components/ui/Loader";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useInvestigationStore } from "@/stores/investigationStore";
 import { useUploadStore } from "@/stores/uploadStore";
@@ -240,12 +243,12 @@ export function Dashboard() {
     return (
       <div className="h-full overflow-y-auto p-6 space-y-6">
         {/* Stats Overview */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard 
             icon={FolderOpen} 
             label="Investigations" 
             value={stats.investigations} 
-            color="brand"
+            color="cyan"
             onClick={() => navigate("/investigations")}
           />
           <StatCard 
@@ -268,60 +271,75 @@ export function Dashboard() {
           />
         </div>
 
-        {/* Welcome Card */}
-        <div className="bg-gradient-to-br from-brand-primary/10 via-purple-500/5 to-blue-500/10 border border-brand-primary/20 rounded-2xl p-8 text-center">
-          <div className="w-20 h-20 mx-auto bg-bg-surface rounded-2xl flex items-center justify-center mb-6 shadow-lg">
-            <Sparkles className="w-10 h-10 text-brand-primary" />
-          </div>
-          <h1 className="text-2xl font-heading font-bold mb-3">
-            Welcome to UAC AI Parser
-          </h1>
-          <p className="text-text-secondary max-w-md mx-auto mb-6">
-            AI-powered forensic analysis for Unix-like systems. Upload UAC archives and let AI help you investigate.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Button size="lg" onClick={() => navigate("/investigations")}>
-              <FolderOpen className="w-5 h-5 mr-2" />
-              Select Investigation
-            </Button>
-            <Button size="lg" variant="secondary" onClick={() => navigate("/investigations?create=true")}>
-              <Plus className="w-5 h-5 mr-2" />
-              Create New
-            </Button>
+        {/* Welcome Hero */}
+        <div className="relative overflow-hidden bg-bg-surface border border-border-subtle rounded-2xl p-8">
+          {/* Background grid pattern */}
+          <div className="absolute inset-0 opacity-[0.03]" style={{
+            backgroundImage: `linear-gradient(#00D9FF 1px, transparent 1px), linear-gradient(90deg, #00D9FF 1px, transparent 1px)`,
+            backgroundSize: '40px 40px'
+          }} />
+          <div className="relative z-10 text-center max-w-lg mx-auto">
+            <div className="w-16 h-16 mx-auto bg-brand-primary/10 rounded-2xl flex items-center justify-center mb-5 border border-brand-primary/20">
+              <Shield className="w-8 h-8 text-brand-primary" />
+            </div>
+            <h1 className="text-2xl font-heading font-bold mb-2 text-text-primary">
+              UAC AI Forensic Platform
+            </h1>
+            <p className="text-text-muted text-sm mb-6 leading-relaxed">
+              Upload UAC archives and leverage AI to investigate Unix-like systems. Get intelligent insights, detect anomalies, and accelerate incident response.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                onClick={() => navigate("/investigations")}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-primary text-bg-base text-sm font-semibold rounded-lg hover:bg-brand-primary-hover transition-colors shadow-lg shadow-brand-primary/20"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Select Investigation
+              </button>
+              <button
+                onClick={() => navigate("/investigations?create=true")}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-bg-elevated border border-border-subtle text-text-primary text-sm font-medium rounded-lg hover:bg-bg-hover transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Create New
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Recent Activity */}
         {recentActivity.length > 0 && (
-          <div className="bg-bg-surface border border-border-subtle rounded-xl">
-            <div className="px-5 py-4 border-b border-border-subtle flex items-center gap-2">
-              <Activity className="w-4 h-4 text-text-muted" />
-              <h3 className="font-semibold text-text-primary">Recent Activity</h3>
+          <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-border-subtle flex items-center gap-2">
+              <Terminal className="w-3.5 h-3.5 text-text-muted" />
+              <h3 className="text-sm font-semibold text-text-primary">Recent Activity</h3>
             </div>
             <div className="divide-y divide-border-subtle">
               {recentActivity.map((job) => (
-                <div key={job.id} className="px-5 py-3 flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                    job.status === "completed" ? "bg-success/10" :
-                    job.status === "error" ? "bg-error/10" : "bg-blue-500/10"
-                  }`}>
+                <div key={job.id} className="px-4 py-3 flex items-center gap-3">
+                  <div className={cn(
+                    "w-7 h-7 rounded-lg flex items-center justify-center",
+                    job.status === "completed" && "bg-success/10",
+                    job.status === "error" && "bg-error/10",
+                    job.status !== "completed" && job.status !== "error" && "bg-blue-500/10"
+                  )}>
                     {job.status === "completed" ? (
-                      <CheckCircle2 className="w-4 h-4 text-success" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-success" />
                     ) : job.status === "error" ? (
-                      <AlertCircle className="w-4 h-4 text-error" />
+                      <AlertCircle className="w-3.5 h-3.5 text-error" />
                     ) : (
-                      <RefreshCw className="w-4 h-4 text-blue-500 animate-spin" />
+                      <Spinner size={14} className="text-blue-500" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary truncate">{job.filename}</p>
-                    <p className="text-xs text-text-muted">
+                    <p className="text-xs font-medium text-text-primary truncate">{job.filename}</p>
+                    <p className="text-[10px] text-text-muted">
                       {job.investigationName || "Unknown investigation"}
                       {job.status === "parsing" && ` · ${job.progress}%`}
                     </p>
                   </div>
                   {job.completedAt && (
-                    <span className="text-xs text-text-muted">
+                    <span className="text-[10px] text-text-muted font-mono">
                       {new Date(job.completedAt).toLocaleTimeString()}
                     </span>
                   )}
@@ -375,63 +393,74 @@ export function Dashboard() {
   });
 
   return (
-    <div className="h-full flex flex-col lg:flex-row gap-6 p-6">
-      {/* Left Panel - Investigation Info & Upload */}
-      <div className="lg:w-80 xl:w-96 flex-shrink-0 space-y-6">
-        {/* Current Investigation */}
-        <div className="bg-bg-surface border border-border-subtle rounded-xl p-5">
-          <div className="flex items-start justify-between mb-4">
+    <div className="h-full overflow-y-auto p-6 space-y-5">
+      {/* Top: Investigation Info + Stats Row */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        {/* Current Investigation Card */}
+        <div className="flex-1 bg-bg-surface border border-border-subtle rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-brand-primary/10 rounded-lg flex items-center justify-center">
-                <FolderOpen className="w-5 h-5 text-brand-primary" />
+              <div className="w-9 h-9 bg-brand-primary/10 rounded-lg flex items-center justify-center">
+                <FolderOpen className="w-4.5 h-4.5 text-brand-primary" />
               </div>
               <div>
-                <h2 className="font-semibold text-text-primary">{currentInvestigation.name}</h2>
+                <h2 className="font-semibold text-sm text-text-primary">{currentInvestigation.name}</h2>
                 {currentInvestigation.case_number && (
-                  <p className="text-xs text-text-muted">{currentInvestigation.case_number}</p>
+                  <p className="text-[10px] text-text-muted font-mono">{currentInvestigation.case_number}</p>
                 )}
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/investigations")}>
+            <button
+              onClick={() => navigate("/investigations")}
+              className="text-xs text-text-muted hover:text-brand-primary transition-colors"
+            >
               Change
-            </Button>
+            </button>
           </div>
           {currentInvestigation.description && (
-            <p className="text-sm text-text-secondary mb-4">{currentInvestigation.description}</p>
+            <p className="text-xs text-text-muted mb-3 line-clamp-2">{currentInvestigation.description}</p>
           )}
-          <div className="flex items-center flex-wrap gap-4 text-sm text-text-muted">
+          <div className="flex items-center flex-wrap gap-4 text-xs text-text-muted">
             <span className="flex items-center gap-1">
-              <Database className="w-4 h-4" />
+              <Database className="w-3.5 h-3.5" />
               {sessions.length} session{sessions.length !== 1 ? "s" : ""}
             </span>
             {totalArtifacts > 0 && (
               <span className="flex items-center gap-1">
-                <Layers className="w-4 h-4" />
+                <Layers className="w-3.5 h-3.5" />
                 {totalArtifacts.toLocaleString()} artifacts
               </span>
             )}
           </div>
         </div>
 
+        {/* Quick Stats */}
+        <div className="grid grid-cols-3 gap-3 lg:w-[380px]">
+          <MiniStat icon={Database} value={sessions.length} label="Sessions" />
+          <MiniStat icon={Layers} value={totalArtifacts} label="Artifacts" />
+          <MiniStat icon={CheckCircle2} value={readySessions.length} label="Ready" accent />
+        </div>
+      </div>
+
+      {/* Upload + Quick Actions Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-5">
         {/* Upload Area */}
         <div
-          className={`
-            relative overflow-hidden border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer
-            ${isDragging 
-              ? "border-brand-primary bg-gradient-to-br from-brand-primary/10 to-brand-primary/5 scale-[1.02]" 
-              : "border-border-default hover:border-brand-primary/50 hover:bg-bg-elevated/50"}
-            ${parseMutation.isPending ? "pointer-events-none" : ""}
-          `}
+          className={cn(
+            "relative overflow-hidden border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer",
+            isDragging
+              ? "border-brand-primary bg-brand-primary/5 scale-[1.01]"
+              : "border-border-default hover:border-brand-primary/40 hover:bg-bg-surface/50",
+            parseMutation.isPending && "pointer-events-none"
+          )}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
         >
-          {/* Background pattern when dragging */}
           {isDragging && (
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.1)_1px,transparent_1px)] bg-[length:20px_20px] pointer-events-none" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,217,255,0.05)_1px,transparent_1px)] bg-[length:20px_20px] pointer-events-none" />
           )}
-          
           <input
             ref={fileInputRef}
             type="file"
@@ -439,187 +468,176 @@ export function Dashboard() {
             onChange={handleFileSelect}
             className="hidden"
           />
-          
-          <div className={`relative z-10 transition-transform ${isDragging ? "scale-110" : ""}`}>
-            <div className={`w-14 h-14 mx-auto mb-4 rounded-xl flex items-center justify-center transition-colors ${
-              isDragging ? "bg-brand-primary/20" : "bg-bg-elevated"
-            }`}>
-              <Upload className={`w-7 h-7 transition-colors ${isDragging ? "text-brand-primary" : "text-text-muted"}`} />
+          <div className={cn("relative z-10 transition-transform", isDragging && "scale-105")}>
+            <div className={cn(
+              "w-12 h-12 mx-auto mb-3 rounded-xl flex items-center justify-center transition-colors",
+              isDragging ? "bg-brand-primary/15" : "bg-bg-elevated"
+            )}>
+              <Upload className={cn("w-6 h-6 transition-colors", isDragging ? "text-brand-primary" : "text-text-muted")} />
             </div>
-            <p className="font-medium text-text-primary mb-1">
+            <p className="text-sm font-medium text-text-primary mb-0.5">
               {isDragging ? "Drop to upload" : "Upload UAC Output"}
             </p>
-            <p className="text-sm text-text-muted mb-3">
-              Drag & drop .tar.gz or .zip file here
+            <p className="text-xs text-text-muted">
+              Drag & drop .tar.gz or .zip — or click to browse
             </p>
-            <span className="inline-flex items-center gap-1 text-xs text-text-muted bg-bg-elevated px-3 py-1.5 rounded-full">
-              <FileArchive className="w-3.5 h-3.5" />
-              or click to browse
-            </span>
           </div>
         </div>
 
-        {/* Active Uploads */}
-        {activeUploads.length > 0 && (
-          <div className="space-y-2">
-            {activeUploads.map(job => (
-              <div key={job.id} className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <RefreshCw className="w-4 h-4 text-brand-primary animate-spin" />
-                  <span className="text-sm font-medium text-text-primary truncate flex-1">
-                    {job.filename}
-                  </span>
-                  <span className="text-xs text-text-muted">{job.progress}%</span>
-                </div>
-                <div className="h-1.5 bg-bg-elevated rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-brand-primary rounded-full transition-all duration-300"
-                    style={{ width: `${job.progress}%` }}
-                  />
-                </div>
-                {job.stepDetail && (
-                  <p className="text-xs text-text-muted mt-2">{job.stepDetail}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {parseMutation.isError && (
-          <div className="flex items-center gap-2 p-3 bg-error/10 border border-error/20 rounded-lg text-error text-sm">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{(parseMutation.error as Error).message}</span>
-          </div>
-        )}
-
-        {parseMutation.isSuccess && (
-          <div className="flex items-center gap-2 p-3 bg-success/10 border border-success/20 rounded-lg text-success text-sm">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>File parsed successfully!</span>
-          </div>
-        )}
-      </div>
-
-      {/* Right Panel - Sessions & Quick Actions */}
-      <div className="flex-1 min-w-0 space-y-6">
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="flex flex-row lg:flex-col gap-2 lg:w-44">
           <QuickActionCard
             icon={Sparkles}
             title="AI Query"
-            description="Ask questions about your data"
             onClick={() => navigate("/query")}
-            color="brand"
             disabled={readySessions.length === 0}
           />
           <QuickActionCard
             icon={Clock}
             title="Timeline"
-            description="View events chronologically"
             onClick={() => navigate("/timeline")}
-            color="purple"
             disabled={searchableSessions.length === 0}
           />
           <QuickActionCard
             icon={Search}
             title="Log Search"
-            description="Search raw log data"
             onClick={() => navigate("/search")}
-            color="blue"
             disabled={searchableSessions.length === 0}
           />
         </div>
+      </div>
 
-        {/* Sessions List */}
-        <div className="bg-bg-surface border border-border-subtle rounded-xl">
-          <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
-            <h3 className="font-semibold text-text-primary">Data Sources</h3>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => refetchInvestigation()}
-                className="p-1.5 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
-                title="Refresh status"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-              <span className="text-sm text-text-muted">{sessions.length} total</span>
-            </div>
-          </div>
-          
-          {sessions.length === 0 ? (
-            <div className="p-8 text-center">
-              <FileArchive className="w-12 h-12 mx-auto mb-3 text-text-muted/50" />
-              <p className="text-text-secondary mb-1">No data sources yet</p>
-              <p className="text-sm text-text-muted">
-                Upload a UAC output file to get started
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border-subtle">
-              {sessions.map((session) => (
+      {/* Active Uploads */}
+      {activeUploads.length > 0 && (
+        <div className="space-y-2">
+          {activeUploads.map(job => (
+            <div key={job.id} className="bg-bg-surface border border-border-subtle rounded-lg p-3">
+              <div className="flex items-center gap-3 mb-2">
+                <Spinner size={14} className="text-brand-primary" />
+                <span className="text-xs font-medium text-text-primary truncate flex-1">
+                  {job.filename}
+                </span>
+                <span className="text-[10px] text-text-muted font-mono">{job.progress}%</span>
+              </div>
+              <div className="h-1 bg-bg-elevated rounded-full overflow-hidden">
                 <div
-                  key={session.id}
-                  className="px-5 py-4 hover:bg-bg-hover transition-colors flex items-center gap-4"
+                  className="h-full bg-brand-primary rounded-full transition-all duration-300"
+                  style={{ width: `${job.progress}%` }}
+                />
+              </div>
+              {job.stepDetail && (
+                <p className="text-[10px] text-text-muted mt-1.5 font-mono">{job.stepDetail}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {parseMutation.isError && (
+        <div className="flex items-center gap-2 p-3 bg-error/10 border border-error/20 rounded-lg text-error text-xs">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>{(parseMutation.error as Error).message}</span>
+        </div>
+      )}
+
+      {parseMutation.isSuccess && (
+        <div className="flex items-center gap-2 p-3 bg-success/10 border border-success/20 rounded-lg text-success text-xs">
+          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+          <span>File parsed successfully!</span>
+        </div>
+      )}
+
+      {/* Sessions List */}
+      <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-text-primary">Data Sources</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => refetchInvestigation()}
+              className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
+              title="Refresh status"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-[10px] text-text-muted font-mono">{sessions.length} total</span>
+          </div>
+        </div>
+
+        {sessions.length === 0 ? (
+          <div className="p-8 text-center">
+            <FileArchive className="w-10 h-10 mx-auto mb-2 text-text-muted/30" />
+            <p className="text-xs text-text-muted">No data sources yet — upload a UAC file to get started</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border-subtle">
+            {sessions.map((session) => (
+              <div
+                key={session.id}
+                className="px-4 py-3 hover:bg-bg-hover/50 transition-colors flex items-center gap-3 group"
+              >
+                <div
+                  className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                  onClick={() => {
+                    setSession(session.session_id);
+                    navigate("/query");
+                  }}
                 >
-                  <div 
-                    className="flex items-center gap-4 flex-1 min-w-0 cursor-pointer"
-                    onClick={() => {
-                      setSession(session.session_id);
-                      navigate("/query");
-                    }}
-                  >
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      session.status === "ready" ? "bg-success/10" :
-                      session.status === "searchable" ? "bg-blue-500/10" : "bg-amber-500/10"
-                    }`}>
-                      <Database className={`w-5 h-5 ${
-                        session.status === "ready" ? "text-success" :
-                        session.status === "searchable" ? "text-blue-500" : "text-amber-500"
-                      }`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-text-primary truncate">
-                        {session.original_filename}
-                      </p>
-                      <div className="flex items-center gap-3 text-xs text-text-muted">
-                        <span>{session.total_artifacts} artifacts</span>
-                        {session.hostname && <span>{session.hostname}</span>}
-                        {session.os_type && <span>{session.os_type}</span>}
-                      </div>
-                    </div>
+                  <div className={cn(
+                    "w-8 h-8 rounded-lg flex items-center justify-center",
+                    session.status === "ready" && "bg-success/10",
+                    session.status === "searchable" && "bg-blue-500/10",
+                    session.status !== "ready" && session.status !== "searchable" && "bg-amber-500/10"
+                  )}>
+                    <Database className={cn(
+                      "w-4 h-4",
+                      session.status === "ready" && "text-success",
+                      session.status === "searchable" && "text-blue-500",
+                      session.status !== "ready" && session.status !== "searchable" && "text-amber-500"
+                    )} />
                   </div>
-                  <div className="flex items-center gap-2">
-                    {session.status === "ready" ? (
-                      <span className="text-xs px-2 py-1 rounded bg-success/10 text-success">
-                        Ready
-                      </span>
-                    ) : (
-                      <span className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
-                        session.status === "searchable" 
-                          ? "bg-blue-500/10 text-blue-500" 
-                          : "bg-amber-500/10 text-amber-500"
-                      }`}>
-                        <RefreshCw className="w-3 h-3 animate-spin" />
-                        {session.status === "searchable" ? "Embedding" : session.status}
-                      </span>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSessionToDelete({ id: session.session_id, name: session.original_filename });
-                      }}
-                      className="p-1.5 rounded hover:bg-error/10 text-text-muted hover:text-error transition-colors"
-                      title="Delete session"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    <ChevronRight className="w-5 h-5 text-text-muted" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-text-primary truncate">
+                      {session.original_filename}
+                    </p>
+                    <div className="flex items-center gap-2 text-[10px] text-text-muted">
+                      <span>{session.total_artifacts} artifacts</span>
+                      {session.hostname && <span>· {session.hostname}</span>}
+                      {session.os_type && <span>· {session.os_type}</span>}
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+                <div className="flex items-center gap-1.5">
+                  {session.status === "ready" ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
+                      Ready
+                    </span>
+                  ) : (
+                    <span className={cn(
+                      "text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 font-medium",
+                      session.status === "searchable"
+                        ? "bg-blue-500/10 text-blue-500"
+                        : "bg-amber-500/10 text-amber-500"
+                    )}>
+                      <Spinner size={10} />
+                      {session.status === "searchable" ? "Embedding" : session.status}
+                    </span>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSessionToDelete({ id: session.session_id, name: session.original_filename });
+                    }}
+                    className="p-1 rounded hover:bg-error/10 text-text-muted hover:text-error transition-colors opacity-0 group-hover:opacity-100"
+                    title="Delete session"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                  <ChevronRight className="w-4 h-4 text-text-muted/50" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Delete Session Confirmation */}
@@ -640,39 +658,27 @@ export function Dashboard() {
 function QuickActionCard({
   icon: Icon,
   title,
-  description,
   onClick,
-  color,
   disabled,
 }: {
   icon: React.ElementType;
   title: string;
-  description: string;
   onClick: () => void;
-  color: "brand" | "purple" | "blue";
   disabled?: boolean;
 }) {
-  const colors = {
-    brand: "bg-brand-primary/10 text-brand-primary group-hover:bg-brand-primary/20",
-    purple: "bg-purple-500/10 text-purple-500 group-hover:bg-purple-500/20",
-    blue: "bg-blue-500/10 text-blue-500 group-hover:bg-blue-500/20",
-  };
-
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`
-        group text-left p-4 bg-bg-surface border border-border-subtle rounded-xl 
-        transition-all hover:border-border-strong hover:shadow-sm
-        ${disabled ? "opacity-50 cursor-not-allowed" : ""}
-      `}
+      className={cn(
+        "flex-1 lg:flex-none flex items-center gap-2 px-3 py-2.5 bg-bg-surface border border-border-subtle rounded-lg",
+        "transition-all hover:border-brand-primary/30 hover:bg-bg-hover text-left",
+        disabled && "opacity-40 cursor-not-allowed"
+      )}
     >
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 transition-colors ${colors[color]}`}>
-        <Icon className="w-5 h-5" />
-      </div>
-      <p className="font-medium text-text-primary">{title}</p>
-      <p className="text-xs text-text-muted mt-0.5">{description}</p>
+      <Icon className="w-4 h-4 text-brand-primary" />
+      <span className="text-xs font-medium text-text-primary">{title}</span>
+      <ChevronRight className="w-3 h-3 text-text-muted/50 ml-auto" />
     </button>
   );
 }
@@ -681,17 +687,17 @@ function StatCard({
   icon: Icon,
   label,
   value,
-  color = "brand",
+  color = "cyan",
   onClick,
 }: {
   icon: React.ElementType;
   label: string;
   value: number;
-  color?: "brand" | "purple" | "blue" | "green";
+  color?: "cyan" | "purple" | "blue" | "green";
   onClick?: () => void;
 }) {
   const colors = {
-    brand: "bg-brand-primary/10 text-brand-primary",
+    cyan: "bg-brand-primary/10 text-brand-primary",
     purple: "bg-purple-500/10 text-purple-500",
     blue: "bg-blue-500/10 text-blue-500",
     green: "bg-success/10 text-success",
@@ -699,18 +705,39 @@ function StatCard({
 
   return (
     <div 
-      className={`bg-bg-surface border border-border-subtle rounded-xl p-4 flex items-center gap-4 ${
-        onClick ? "cursor-pointer hover:border-border-strong transition-colors" : ""
-      }`}
+      className={cn(
+        "bg-bg-surface border border-border-subtle rounded-xl p-3 flex items-center gap-3",
+        onClick && "cursor-pointer hover:border-brand-primary/30 transition-colors"
+      )}
       onClick={onClick}
     >
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${colors[color]}`}>
-        <Icon className="w-5 h-5" />
+      <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", colors[color])}>
+        <Icon className="w-4 h-4" />
       </div>
       <div>
-        <p className="text-2xl font-bold text-text-primary">{value}</p>
-        <p className="text-xs text-text-muted">{label}</p>
+        <p className="text-xl font-bold text-text-primary font-heading">{value}</p>
+        <p className="text-[10px] text-text-muted uppercase tracking-wide">{label}</p>
       </div>
+    </div>
+  );
+}
+
+function MiniStat({
+  icon: Icon,
+  value,
+  label,
+  accent,
+}: {
+  icon: React.ElementType;
+  value: number;
+  label: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="bg-bg-surface border border-border-subtle rounded-lg p-3 text-center">
+      <Icon className={cn("w-4 h-4 mx-auto mb-1", accent ? "text-success" : "text-text-muted")} />
+      <p className="text-lg font-bold text-text-primary font-heading">{value.toLocaleString()}</p>
+      <p className="text-[10px] text-text-muted uppercase tracking-wide">{label}</p>
     </div>
   );
 }

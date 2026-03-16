@@ -291,10 +291,13 @@ class MitreService:
                                 "confidence": base_confidence,
                                 "evidence_chunk_id": chunk.chunk_id,
                                 "evidence_snippet": snippet,
+                                "source_file": chunk.source_file,
                             }
                         break  # One match per technique per chunk is enough
         
-        # Persist to database
+        # Remove previous scan results before persisting new ones
+        MitreMapping.query.filter_by(session_id=session_id).delete()
+
         results = []
         for det in detections.values():
             mapping = MitreMapping(
@@ -316,6 +319,13 @@ class MitreService:
     def get_session_mappings(self, session_id: int) -> list[dict]:
         """Get all MITRE mappings for a session."""
         mappings = MitreMapping.query.filter_by(session_id=session_id).all()
+        # Build a lookup for source_file from evidence_chunk_id
+        chunk_ids = [m.evidence_chunk_id for m in mappings if m.evidence_chunk_id]
+        source_map: dict[str, str] = {}
+        if chunk_ids:
+            from app.models import Chunk
+            chunks = Chunk.query.filter(Chunk.chunk_id.in_(chunk_ids)).all()
+            source_map = {c.chunk_id: c.source_file for c in chunks}
         return [
             {
                 "technique_id": m.technique_id,
@@ -323,6 +333,7 @@ class MitreService:
                 "tactic": m.tactic,
                 "confidence": m.confidence,
                 "evidence_snippet": m.evidence_snippet,
+                "source_file": source_map.get(m.evidence_chunk_id, "") if m.evidence_chunk_id else "",
             }
             for m in mappings
         ]
@@ -330,6 +341,13 @@ class MitreService:
     def get_session_summary(self, session_id: int) -> dict:
         """Get MITRE ATT&CK summary grouped by tactic."""
         mappings = MitreMapping.query.filter_by(session_id=session_id).all()
+        # Build a lookup for source_file from evidence_chunk_id
+        chunk_ids = [m.evidence_chunk_id for m in mappings if m.evidence_chunk_id]
+        source_map: dict[str, str] = {}
+        if chunk_ids:
+            from app.models import Chunk
+            chunks = Chunk.query.filter(Chunk.chunk_id.in_(chunk_ids)).all()
+            source_map = {c.chunk_id: c.source_file for c in chunks}
         
         by_tactic: dict[str, list] = {}
         for m in mappings:
@@ -337,6 +355,9 @@ class MitreService:
                 "technique_id": m.technique_id,
                 "technique_name": m.technique_name,
                 "confidence": m.confidence,
+                "evidence_snippet": m.evidence_snippet,
+                "evidence_chunk_id": m.evidence_chunk_id,
+                "source_file": source_map.get(m.evidence_chunk_id, "") if m.evidence_chunk_id else "",
             })
         
         return {

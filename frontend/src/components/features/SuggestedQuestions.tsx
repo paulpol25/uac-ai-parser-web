@@ -4,7 +4,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Lightbulb, ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { API_BASE_URL } from "@/services/api";
 
 interface SuggestedQuestionsProps {
@@ -81,16 +80,14 @@ export function SuggestedQuestions({ sessionId, onSelectQuestion }: SuggestedQue
             )}
             <span>Suggested Questions</span>
           </CardTitle>
-          <Button 
-            size="sm" 
-            variant="ghost" 
+          <button 
             onClick={handleRefresh}
             disabled={isFetching}
             title="Generate new suggestions"
-            className="h-6 w-6 p-0"
+            className="h-6 w-6 p-0 flex items-center justify-center text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-3 h-3 ${isFetching ? "animate-spin" : ""}`} />
-          </Button>
+          </button>
         </div>
       </CardHeader>
       <CardContent className="py-2 px-3">

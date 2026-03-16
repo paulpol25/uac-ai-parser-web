@@ -19,8 +19,8 @@ import {
   ArchiveRestore,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
+import { cn } from "@/utils/cn";
+import { Spinner } from "@/components/ui/Loader";
 import { Input } from "@/components/ui/Input";
 import { ScrollToTop } from "@/components/ui/ScrollToTop";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -243,18 +243,16 @@ export function Investigations() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin w-8 h-8 border-2 border-brand-primary border-t-transparent rounded-full" />
+        <Spinner className="w-6 h-6 text-brand-primary" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <Card>
-        <CardContent>
-          <p className="text-error">Failed to load investigations</p>
-        </CardContent>
-      </Card>
+      <div className="bg-bg-surface border border-border-subtle rounded-xl p-6">
+        <p className="text-status-error text-sm">Failed to load investigations</p>
+      </div>
     );
   }
 
@@ -344,10 +342,10 @@ export function Investigations() {
             </button>
           </div>
 
-          <Button size="sm" className="h-8 text-xs px-3" onClick={() => setShowCreateModal(true)}>
-            <Plus className="w-3.5 h-3.5 mr-1" />
+          <button className="flex items-center gap-1 h-8 px-3 text-xs font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => setShowCreateModal(true)}>
+            <Plus className="w-3.5 h-3.5" />
             New
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -359,26 +357,24 @@ export function Investigations() {
           </span>
           <div className="flex items-center gap-2">
             {statusFilter !== "archived" && (
-              <Button size="sm" variant="secondary" onClick={handleBatchArchive}>
-                <Archive className="w-3.5 h-3.5 mr-1.5" />
+              <button className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors" onClick={handleBatchArchive}>
+                <Archive className="w-3.5 h-3.5" />
                 Archive
-              </Button>
+              </button>
             )}
             {statusFilter === "archived" && (
-              <Button size="sm" variant="secondary" onClick={handleBatchUnarchive}>
-                <ArchiveRestore className="w-3.5 h-3.5 mr-1.5" />
+              <button className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors" onClick={handleBatchUnarchive}>
+                <ArchiveRestore className="w-3.5 h-3.5" />
                 Restore
-              </Button>
+              </button>
             )}
-            <Button
-              size="sm"
-              variant="secondary"
+            <button
               onClick={handleBatchDelete}
-              className="text-red-400 hover:text-red-500 hover:bg-red-500/10"
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-red-400 bg-bg-elevated border border-border-default rounded-lg hover:text-red-500 hover:bg-red-500/10 transition-colors"
               >
-                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                <Trash2 className="w-3.5 h-3.5" />
                 Delete
-              </Button>
+              </button>
             </div>
             <button
               onClick={() => setSelectedIds(new Set())}
@@ -401,10 +397,10 @@ export function Investigations() {
               <p className="text-text-muted mb-6 max-w-sm mx-auto">
                 Create an investigation to organize your forensic analysis sessions and upload UAC archives.
               </p>
-              <Button onClick={() => setShowCreateModal(true)}>
-                <Plus className="w-4 h-4 mr-2" />
+              <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => setShowCreateModal(true)}>
+                <Plus className="w-4 h-4" />
                 Create your first investigation
-              </Button>
+              </button>
             </>
           ) : (
             <>
@@ -412,10 +408,10 @@ export function Investigations() {
               <p className="text-text-muted mb-4 max-w-sm mx-auto">
                 Try adjusting your search or filter criteria.
               </p>
-              <Button variant="secondary" onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}>
-                <X className="w-4 h-4 mr-2" />
+              <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors" onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}>
+                <X className="w-4 h-4" />
                 Clear filters
-              </Button>
+              </button>
             </>
           )}
         </div>
@@ -464,7 +460,7 @@ export function Investigations() {
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-text-primary truncate">{investigation.name}</span>
                     {investigation.case_number && (
-                      <span className="text-xs px-1.5 py-0.5 bg-slate-500/10 text-slate-400 rounded font-mono">
+                      <span className="text-xs px-1.5 py-0.5 bg-text-muted/10 text-text-muted rounded font-mono">
                         {investigation.case_number}
                       </span>
                     )}
@@ -482,7 +478,7 @@ export function Investigations() {
                 <span className={`text-xs px-2 py-1 rounded-full ${
                   investigation.status === "active" 
                     ? "bg-green-500/10 text-green-400" 
-                    : "bg-slate-500/10 text-slate-400"
+                    : "bg-text-muted/10 text-text-muted"
                 }`}>
                   {investigation.status}
                 </span>
@@ -503,17 +499,16 @@ export function Investigations() {
                 </span>
                 
                 <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  <Button variant="ghost" size="sm" onClick={() => setEditingInvestigation(investigation)} title="Edit">
+                  <button className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors" onClick={() => setEditingInvestigation(investigation)} title="Edit">
                     <Edit2 className="w-4 h-4" />
-                  </Button>
+                  </button>
                   {investigation.status === "active" ? (
-                    <Button variant="ghost" size="sm" onClick={(e) => handleArchive(e, investigation)} title="Archive">
+                    <button className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors" onClick={(e) => handleArchive(e, investigation)} title="Archive">
                       <Archive className="w-4 h-4" />
-                    </Button>
+                    </button>
                   ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                    <button
+                      className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
                         updateMutation.mutate({ id: investigation.id, data: { status: "active" } });
@@ -521,17 +516,15 @@ export function Investigations() {
                       title="Restore"
                     >
                       <ArchiveRestore className="w-4 h-4" />
-                    </Button>
+                    </button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
+                  <button
                     onClick={(e) => handleDelete(e, investigation)}
                     title="Delete"
-                    className="text-red-400 hover:text-red-500 hover:bg-red-500/10"
+                    className="p-1.5 text-red-400 hover:text-red-500 rounded-md hover:bg-red-500/10 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </Button>
+                  </button>
                 </div>
               </div>
             );
@@ -575,7 +568,7 @@ export function Investigations() {
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
                           investigation.status === "active" 
                             ? "bg-green-500/10 text-green-400" 
-                            : "bg-slate-500/10 text-slate-400"
+                            : "bg-text-muted/10 text-text-muted"
                         }`}>
                           {investigation.status}
                         </span>
@@ -585,7 +578,7 @@ export function Investigations() {
                           </span>
                         )}
                         {investigation.case_number && (
-                          <span className="text-xs px-2 py-0.5 bg-slate-500/10 text-slate-400 rounded-full font-mono whitespace-nowrap">
+                          <span className="text-xs px-2 py-0.5 bg-text-muted/10 text-text-muted rounded-full font-mono whitespace-nowrap">
                             {investigation.case_number}
                           </span>
                         )}
@@ -612,9 +605,8 @@ export function Investigations() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                    <button
+                      className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingInvestigation(investigation);
@@ -622,20 +614,18 @@ export function Investigations() {
                       title="Edit"
                     >
                       <Edit2 className="w-4 h-4" />
-                    </Button>
+                    </button>
                     {investigation.status === "active" ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
+                      <button
+                        className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors"
                         onClick={(e) => handleArchive(e, investigation)}
                         title="Archive"
                       >
                         <Archive className="w-4 h-4" />
-                      </Button>
+                      </button>
                     ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
+                      <button
+                        className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors"
                         onClick={(e) => {
                           e.stopPropagation();
                           updateMutation.mutate({ id: investigation.id, data: { status: "active" } });
@@ -643,17 +633,15 @@ export function Investigations() {
                         title="Restore"
                       >
                         <ArchiveRestore className="w-4 h-4" />
-                      </Button>
+                      </button>
                     )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                    <button
                       onClick={(e) => handleDelete(e, investigation)}
                       title="Delete"
-                      className="text-red-400 hover:text-red-500 hover:bg-red-500/10"
+                      className="p-1.5 text-red-400 hover:text-red-500 rounded-md hover:bg-red-500/10 transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </Button>
+                    </button>
                     <ChevronRight className="w-5 h-5 text-text-muted ml-2" />
                   </div>
                 </div>
@@ -748,12 +736,12 @@ function CreateInvestigationModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>New Investigation</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="w-full max-w-md bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-border-subtle">
+          <h2 className="text-base font-semibold text-text-primary">New Investigation</h2>
+        </div>
+        <div className="p-5">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-1">Name *</label>
@@ -761,7 +749,7 @@ function CreateInvestigationModal({
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 bg-bg-default border border-border-default rounded focus:outline-none focus:border-brand-primary"
+                className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:border-brand-primary text-sm text-text-primary"
                 placeholder="Investigation name"
                 required
               />
@@ -774,7 +762,7 @@ function CreateInvestigationModal({
                 type="text"
                 value={caseNumber}
                 onChange={(e) => setCaseNumber(e.target.value)}
-                className="w-full px-3 py-2 bg-bg-default border border-border-default rounded focus:outline-none focus:border-brand-primary"
+                className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:border-brand-primary text-sm text-text-primary"
                 placeholder="e.g., CASE-2026-001"
               />
             </div>
@@ -785,22 +773,22 @@ function CreateInvestigationModal({
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-3 py-2 bg-bg-default border border-border-default rounded focus:outline-none focus:border-brand-primary"
+                className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:border-brand-primary text-sm text-text-primary"
                 placeholder="Brief description of the investigation"
                 rows={3}
               />
             </div>
             <div className="flex gap-3 justify-end">
-              <Button type="button" variant="ghost" onClick={onClose}>
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors">
                 Cancel
-              </Button>
-              <Button type="submit" disabled={!name || isLoading}>
-                {isLoading ? "Creating..." : "Create"}
-              </Button>
+              </button>
+              <button type="submit" disabled={!name || isLoading} className={cn("px-4 py-2 text-sm font-medium rounded-lg transition-colors", !name || isLoading ? "bg-brand-primary/50 text-white/50 cursor-not-allowed" : "bg-brand-primary text-white hover:bg-brand-primary/90")}>
+                {isLoading ? <><Spinner className="w-4 h-4 inline mr-1.5" />Creating...</> : "Create"}
+              </button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
@@ -830,12 +818,12 @@ function EditInvestigationModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Edit Investigation</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="w-full max-w-md bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-border-subtle">
+          <h2 className="text-base font-semibold text-text-primary">Edit Investigation</h2>
+        </div>
+        <div className="p-5">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium mb-1">Name *</label>
@@ -843,7 +831,7 @@ function EditInvestigationModal({
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 bg-bg-default border border-border-default rounded focus:outline-none focus:border-brand-primary"
+                className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:border-brand-primary text-sm text-text-primary"
                 placeholder="Investigation name"
                 required
               />
@@ -856,7 +844,7 @@ function EditInvestigationModal({
                 type="text"
                 value={caseNumber}
                 onChange={(e) => setCaseNumber(e.target.value)}
-                className="w-full px-3 py-2 bg-bg-default border border-border-default rounded focus:outline-none focus:border-brand-primary"
+                className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:border-brand-primary text-sm text-text-primary"
                 placeholder="e.g., CASE-2026-001"
               />
             </div>
@@ -867,22 +855,22 @@ function EditInvestigationModal({
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-3 py-2 bg-bg-default border border-border-default rounded focus:outline-none focus:border-brand-primary"
+                className="w-full px-3 py-2 bg-bg-elevated border border-border rounded-lg focus:outline-none focus:border-brand-primary text-sm text-text-primary"
                 placeholder="Brief description of the investigation"
                 rows={3}
               />
             </div>
             <div className="flex gap-3 justify-end">
-              <Button type="button" variant="ghost" onClick={onClose}>
+              <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors">
                 Cancel
-              </Button>
-              <Button type="submit" disabled={!name || isLoading}>
-                {isLoading ? "Saving..." : "Save"}
-              </Button>
+              </button>
+              <button type="submit" disabled={!name || isLoading} className={cn("px-4 py-2 text-sm font-medium rounded-lg transition-colors", !name || isLoading ? "bg-brand-primary/50 text-white/50 cursor-not-allowed" : "bg-brand-primary text-white hover:bg-brand-primary/90")}>
+                {isLoading ? <><Spinner className="w-4 h-4 inline mr-1.5" />Saving...</> : "Save"}
+              </button>
             </div>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

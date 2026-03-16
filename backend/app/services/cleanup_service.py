@@ -42,6 +42,8 @@ class CleanupService:
                 db_size = result.scalar() or 0
             except Exception:
                 db_size = 0
+        chroma_dir = current_app.config.get("CHROMA_PERSIST_DIR", "chroma_db")
+        uploads_dir = current_app.config.get("UPLOAD_FOLDER", "uploads")
         chroma_size = self._get_dir_size(chroma_dir)
         uploads_size = self._get_dir_size(uploads_dir)
         total = db_size + chroma_size + uploads_size

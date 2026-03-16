@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { getSessionStats } from "@/services/api";
 
 interface SessionInfoPanelProps {
@@ -130,13 +129,13 @@ export function SessionInfoPanel({ sessionId, compact = false }: SessionInfoPane
             What the AI Can See
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => refetch()}>
+            <button className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors" onClick={() => refetch()}>
               <RefreshCw className="w-3.5 h-3.5" />
-            </Button>
+            </button>
             {compact && (
-              <Button size="sm" variant="ghost" onClick={() => setExpanded(false)}>
+              <button className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors" onClick={() => setExpanded(false)}>
                 <ChevronUp className="w-3.5 h-3.5" />
-              </Button>
+              </button>
             )}
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -10,27 +10,27 @@ import {
   LogOut,
   User,
   Search,
-  PanelLeftClose,
-  PanelLeft,
   ChevronDown,
-  Shield,
+  Menu,
+  X,
+  Crosshair,
 } from "lucide-react";
-import { clsx } from "clsx";
+import { cn } from "@/utils/cn";
 import { useQuery } from "@tanstack/react-query";
 import { useInvestigationStore } from "@/stores/investigationStore";
 import { useAuthStore } from "@/stores/authStore";
 import { logout as apiLogout, listInvestigations } from "@/services/api";
-import { Button } from "./Button";
 import { Footer } from "./Footer";
+import { ThemeToggle } from "./ThemeToggle";
 import { GlobalUploadProgress } from "@/components/features/GlobalUploadProgress";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/investigations", icon: FolderOpen, label: "Investigations" },
-  { to: "/query", icon: Sparkles, label: "AI Analysis" },
+  { to: "/investigations", icon: FolderOpen, label: "Cases" },
+  { to: "/query", icon: Sparkles, label: "AI Query" },
   { to: "/timeline", icon: Clock, label: "Timeline" },
   { to: "/search", icon: Search, label: "Search" },
-  { to: "/analysis", icon: Shield, label: "Analysis" },
+  { to: "/analysis", icon: Crosshair, label: "Analysis" },
   { to: "/export", icon: Download, label: "Export" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
@@ -40,8 +40,11 @@ export function Layout() {
   const location = useLocation();
   const { currentInvestigation, setCurrentInvestigation, clearInvestigation } = useInvestigationStore();
   const { user, logout, isAuthenticated } = useAuthStore();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showInvestigationDropdown, setShowInvestigationDropdown] = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const invDropdownRef = useRef<HTMLDivElement>(null);
+  const userDropdownRef = useRef<HTMLDivElement>(null);
 
   const { data: investigationsData } = useQuery({
     queryKey: ["investigations"],
@@ -50,6 +53,23 @@ export function Layout() {
   });
 
   const investigations = investigationsData?.investigations?.filter(i => i.status === "active") || [];
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (invDropdownRef.current && !invDropdownRef.current.contains(e.target as Node)) {
+        setShowInvestigationDropdown(false);
+      }
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target as Node)) {
+        setShowUserDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     try {
@@ -70,214 +90,216 @@ export function Layout() {
   };
 
   return (
-    <div className="h-screen flex bg-bg-base overflow-hidden">
-      {/* Sidebar */}
-      <aside className={clsx(
-        "bg-bg-surface border-r border-border-subtle flex flex-col flex-shrink-0 h-full overflow-y-auto transition-all duration-300",
-        sidebarCollapsed ? "w-16" : "w-60"
-      )}>
-        {/* Logo */}
-        <div className={clsx(
-          "h-16 flex items-center border-b border-border-subtle",
-          sidebarCollapsed ? "justify-center" : "px-4 justify-between"
-        )}>
-          <div className="flex items-center">
-            <div className="w-9 h-9 bg-brand-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Sparkles className="w-5 h-5 text-brand-primary" />
+    <div className="h-screen flex flex-col bg-bg-base overflow-hidden">
+      {/* Top Navigation Bar */}
+      <header className="h-12 bg-bg-surface/90 backdrop-blur-xl border-b border-border-subtle flex items-center px-3 flex-shrink-0 z-40 relative">
+        {/* Left: Logo + Nav */}
+        <div className="flex items-center gap-0.5 mr-3">
+          <NavLink to="/" className="flex items-center gap-2 mr-3 group">
+            <div className="w-7 h-7 bg-brand-primary/10 rounded-md flex items-center justify-center group-hover:bg-brand-primary/20 transition-colors border border-brand-primary/20">
+              <img src="/uac.svg" alt="UAC" className="w-4 h-4" />
             </div>
-            {!sidebarCollapsed && <span className="font-heading font-semibold ml-3">UAC AI</span>}
-          </div>
-          {!sidebarCollapsed && (
-            <button
-              onClick={() => setSidebarCollapsed(true)}
-              className="p-1.5 rounded-lg hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
-              title="Collapse sidebar"
-            >
-              <PanelLeftClose className="w-4 h-4" />
-            </button>
-          )}
+            <span className="font-heading font-bold text-xs tracking-wider hidden sm:flex items-baseline gap-0.5">
+              <span className="text-brand-primary">UAC</span>
+              <span className="text-text-primary">AI</span>
+              <span className="text-[9px] text-text-muted font-mono ml-1 hidden md:inline">PARSER</span>
+            </span>
+          </NavLink>
+
+          {/* Separator */}
+          <div className="h-5 w-px bg-border-subtle hidden lg:block mr-1" />
+
+          {/* Desktop Navigation */}
+          <nav className="hidden lg:flex items-center">
+            {navItems.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === "/"}
+                className={({ isActive }) =>
+                  cn(
+                    "relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all",
+                    isActive
+                      ? "bg-brand-primary/10 text-brand-primary"
+                      : "text-text-muted hover:bg-bg-hover hover:text-text-primary"
+                  )
+                }
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </NavLink>
+            ))}
+          </nav>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 p-3">
-          <ul className="space-y-1">
-            {navItems.map(({ to, icon: Icon, label }) => (
-              <li key={to}>
-                <NavLink
-                  to={to}
-                  end={to === "/"}
-                  className={({ isActive }) =>
-                    clsx(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-                      isActive
-                        ? "bg-brand-primary/10 text-brand-primary shadow-sm"
-                        : "text-text-secondary hover:bg-bg-hover hover:text-text-primary",
-                      sidebarCollapsed && "justify-center px-2"
-                    )
-                  }
-                  title={sidebarCollapsed ? label : undefined}
-                >
-                  <Icon className="w-5 h-5 flex-shrink-0" />
-                  {!sidebarCollapsed && label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        {/* Expand button when collapsed */}
-        {sidebarCollapsed && (
-          <div className="p-3 border-t border-border-subtle">
-            <button
-              onClick={() => setSidebarCollapsed(false)}
-              className="w-full p-2 rounded-lg hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors flex items-center justify-center"
-              title="Expand sidebar"
-            >
-              <PanelLeft className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* User section */}
-        {isAuthenticated && user && (
-          <div className="p-3 border-t border-border-subtle">
-            {sidebarCollapsed ? (
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-primary to-info flex items-center justify-center">
-                  <User className="w-4 h-4 text-text-inverse" />
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="p-2 rounded-lg hover:bg-bg-hover text-text-muted hover:text-error transition-colors"
-                  title="Sign out"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-3 px-2 py-2 bg-bg-elevated rounded-lg">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-primary to-info flex items-center justify-center">
-                    <User className="w-4 h-4 text-text-inverse" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary truncate">
-                      {user.username}
-                    </p>
-                    <p className="text-xs text-text-muted truncate">{user.email}</p>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full mt-2 justify-start text-text-secondary hover:text-error"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sign out
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-      </aside>
-
-      {/* Main content */}
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        {/* Header */}
-        <header className="h-16 bg-bg-surface border-b border-border-subtle flex items-center justify-between px-6 flex-shrink-0">
-          <h1 className="font-heading font-semibold text-lg text-text-primary">
-            AI-Powered Forensic Analysis
-          </h1>
-          
+        {/* Right: Investigation + Theme + User */}
+        <div className="ml-auto flex items-center gap-1.5">
           {/* Investigation Switcher */}
-          <div className="relative">
+          <div ref={invDropdownRef} className="relative">
             <button
               onClick={() => setShowInvestigationDropdown(!showInvestigationDropdown)}
-              className={clsx(
-                "flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-colors",
-                currentInvestigation 
-                  ? "bg-bg-elevated hover:bg-bg-hover" 
-                  : "bg-brand-primary/10 text-brand-primary hover:bg-brand-primary/20"
+              className={cn(
+                "flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-md transition-all border",
+                currentInvestigation
+                  ? "bg-bg-elevated border-border-subtle hover:border-brand-primary/30"
+                  : "bg-brand-primary/10 border-brand-primary/20 text-brand-primary hover:bg-brand-primary/15"
               )}
             >
-              <FolderOpen className="w-4 h-4 text-brand-primary" />
-              <span className="font-medium max-w-[200px] truncate">
-                {currentInvestigation?.name || "Select Investigation"}
+              <FolderOpen className="w-3 h-3 text-brand-primary" />
+              <span className="font-medium max-w-[120px] truncate hidden sm:block">
+                {currentInvestigation?.name || "Select Case"}
               </span>
-              <ChevronDown className="w-4 h-4 text-text-muted" />
+              <ChevronDown className="w-3 h-3 text-text-muted" />
             </button>
-            
+
             {showInvestigationDropdown && (
-              <>
-                <div 
-                  className="fixed inset-0 z-40" 
-                  onClick={() => setShowInvestigationDropdown(false)} 
-                />
-                <div className="absolute right-0 top-full mt-2 z-50 bg-bg-surface border border-border-default rounded-xl shadow-xl min-w-[280px] max-h-[400px] overflow-hidden">
-                  <div className="p-2 border-b border-border-subtle">
-                    <p className="text-xs font-medium text-text-muted px-2 py-1">Switch Investigation</p>
-                  </div>
-                  <div className="overflow-y-auto max-h-[300px] p-2">
-                    {investigations.length === 0 ? (
-                      <p className="text-sm text-text-muted px-2 py-4 text-center">No investigations yet</p>
-                    ) : (
-                      investigations.map((inv) => (
-                        <button
-                          key={inv.id}
-                          onClick={() => handleSelectInvestigation(inv)}
-                          className={clsx(
-                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors",
-                            currentInvestigation?.id === inv.id
-                              ? "bg-brand-primary/10 text-brand-primary"
-                              : "hover:bg-bg-hover text-text-primary"
+              <div className="absolute right-0 top-full mt-1.5 z-50 bg-bg-surface border border-border-default rounded-lg shadow-lg min-w-[260px] max-h-[380px] overflow-hidden animate-fade-in">
+                <div className="p-2 border-b border-border-subtle">
+                  <p className="text-[10px] font-semibold text-text-muted px-2 py-0.5 uppercase tracking-wider">Active Cases</p>
+                </div>
+                <div className="overflow-y-auto max-h-[280px] p-1">
+                  {investigations.length === 0 ? (
+                    <p className="text-xs text-text-muted px-2 py-4 text-center">No cases available</p>
+                  ) : (
+                    investigations.map((inv) => (
+                      <button
+                        key={inv.id}
+                        onClick={() => handleSelectInvestigation(inv)}
+                        className={cn(
+                          "w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-left transition-all",
+                          currentInvestigation?.id === inv.id
+                            ? "bg-brand-primary/10 text-brand-primary"
+                            : "hover:bg-bg-hover text-text-primary"
+                        )}
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-xs truncate">{inv.name}</p>
+                          {inv.case_number && (
+                            <p className="text-[10px] text-text-muted truncate font-mono">{inv.case_number}</p>
                           )}
-                        >
-                          <FolderOpen className="w-4 h-4 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm truncate">{inv.name}</p>
-                            {inv.case_number && (
-                              <p className="text-xs text-text-muted truncate">{inv.case_number}</p>
-                            )}
-                          </div>
-                          {currentInvestigation?.id === inv.id && (
-                            <span className="text-xs px-1.5 py-0.5 bg-brand-primary/20 rounded">Active</span>
-                          )}
-                        </button>
-                      ))
-                    )}
+                        </div>
+                        {currentInvestigation?.id === inv.id && (
+                          <span className="text-[9px] px-1.5 py-0.5 bg-brand-primary/20 rounded font-semibold tracking-wider uppercase">Active</span>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="p-1 border-t border-border-subtle">
+                  <button
+                    onClick={() => {
+                      setShowInvestigationDropdown(false);
+                      navigate("/investigations?create=true");
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs text-brand-primary hover:bg-brand-primary/10 rounded-md transition-colors font-medium"
+                  >
+                    + New Case
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Theme Toggle */}
+          <ThemeToggle className="hidden sm:flex" />
+
+          {/* User Profile */}
+          {isAuthenticated && user && (
+            <div ref={userDropdownRef} className="relative">
+              <button
+                onClick={() => setShowUserDropdown(!showUserDropdown)}
+                className="flex items-center gap-1.5 px-1.5 py-1 rounded-md hover:bg-bg-hover transition-colors"
+              >
+                <div className="w-7 h-7 rounded-md bg-brand-primary flex items-center justify-center">
+                  <User className="w-3.5 h-3.5 text-white" />
+                </div>
+                <span className="text-[11px] font-medium text-text-secondary hidden md:block max-w-[80px] truncate">
+                  {user.username}
+                </span>
+              </button>
+
+              {showUserDropdown && (
+                <div className="absolute right-0 top-full mt-1.5 z-50 bg-bg-surface border border-border-default rounded-lg shadow-lg min-w-[200px] animate-fade-in">
+                  <div className="p-3 border-b border-border-subtle">
+                    <p className="text-sm font-medium text-text-primary truncate">{user.username}</p>
+                    <p className="text-[11px] text-text-muted truncate">{user.email}</p>
                   </div>
-                  <div className="p-2 border-t border-border-subtle">
+                  <div className="p-1">
                     <button
                       onClick={() => {
-                        setShowInvestigationDropdown(false);
-                        navigate("/investigations?create=true");
+                        setShowUserDropdown(false);
+                        navigate("/settings");
                       }}
-                      className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-brand-primary hover:bg-brand-primary/10 rounded-lg transition-colors"
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:bg-bg-hover rounded-md transition-colors"
                     >
-                      <span>+ New Investigation</span>
+                      <Settings className="w-3.5 h-3.5" />
+                      Settings
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-error hover:bg-error/10 rounded-md transition-colors"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      Sign out
                     </button>
                   </div>
                 </div>
-              </>
-            )}
-          </div>
-        </header>
+              )}
+            </div>
+          )}
 
-        {/* Page content */}
-        <div className="flex-1 min-h-0">
-          <Outlet />
+          {/* Mobile Menu Toggle */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="lg:hidden p-1.5 rounded-md hover:bg-bg-hover text-text-muted hover:text-text-primary transition-colors"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
+      </header>
 
-        {/* Footer - hidden on chat page */}
-        {location.pathname !== "/query" && (
-          <div className="flex-shrink-0">
-            <Footer />
-          </div>
-        )}
+      {/* Mobile Navigation */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden absolute inset-x-0 top-12 z-30 bg-bg-surface/95 backdrop-blur-xl border-b border-border-subtle animate-slide-up">
+          <nav className="p-2 space-y-0.5">
+            {navItems.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === "/"}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-all",
+                    isActive
+                      ? "bg-brand-primary/10 text-brand-primary"
+                      : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                  )
+                }
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </NavLink>
+            ))}
+            <div className="pt-2 px-4">
+              <ThemeToggle />
+            </div>
+          </nav>
+        </div>
+      )}
+
+      {/* Page content */}
+      <main className="flex-1 min-h-0 overflow-hidden">
+        <Outlet />
       </main>
 
-      {/* Global Upload Progress Indicator */}
+      {/* Footer */}
+      {location.pathname !== "/query" && (
+        <div className="flex-shrink-0">
+          <Footer />
+        </div>
+      )}
+
       <GlobalUploadProgress />
     </div>
   );

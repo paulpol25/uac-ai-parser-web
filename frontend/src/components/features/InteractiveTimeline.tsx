@@ -4,9 +4,9 @@
  * Uses a simple canvas-based density bar and event list.
  * No external charting lib required — uses raw SVG for the frequency histogram.
  */
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, Download } from "lucide-react";
+import { BarChart3, Download, ChevronDown, ChevronRight, Calendar } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { getTimelineStats, getTimelineEvents } from "@/services/api";
 
@@ -46,35 +46,84 @@ function getEventColor(type: string): string {
   return EVENT_TYPE_COLORS[type] || "#64748b";
 }
 
-/** Simple SVG bar chart for event frequency. */
-function FrequencyChart({ data }: { data: Record<string, number> }) {
+/** Responsive SVG bar chart for event frequency with hover tooltip and click-to-select. */
+function FrequencyChart({ data, label, onBarClick, selectedKey }: { data: Record<string, number>; label?: string; onBarClick?: (key: string) => void; selectedKey?: string | null }) {
   const entries = Object.entries(data);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; label: string; value: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
   if (entries.length === 0) return null;
 
   const max = Math.max(...entries.map(([, v]) => v));
-  const barWidth = Math.max(2, Math.floor(600 / entries.length));
+  const barWidth = Math.max(4, Math.min(12, 600 / entries.length));
+  const chartW = entries.length * (barWidth + 2);
+  const chartH = 100;
+
+  const getBarIndex = (e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return -1;
+    const rect = svg.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * chartW;
+    return Math.floor(x / (barWidth + 2));
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const idx = getBarIndex(e);
+    if (idx >= 0 && idx < entries.length) {
+      const svg = svgRef.current!;
+      const rect = svg.getBoundingClientRect();
+      const [key, value] = entries[idx];
+      setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top - 10, label: key, value });
+    } else {
+      setTooltip(null);
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!onBarClick) return;
+    const idx = getBarIndex(e);
+    if (idx >= 0 && idx < entries.length) {
+      onBarClick(entries[idx][0]);
+    }
+  };
 
   return (
-    <div className="overflow-x-auto">
-      <svg width={entries.length * barWidth + 20} height={80} className="block">
+    <div className="relative w-full overflow-hidden">
+      {label && <p className="text-[10px] text-text-muted mb-1 font-medium uppercase tracking-wider">{label}</p>}
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${chartW} ${chartH}`}
+        preserveAspectRatio="none"
+        className={`w-full h-24 block ${onBarClick ? "cursor-pointer" : ""}`}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setTooltip(null)}
+        onClick={handleClick}
+      >
         {entries.map(([key, value], i) => {
-          const h = max > 0 ? (value / max) * 60 : 0;
+          const h = max > 0 ? (value / max) * 80 : 0;
+          const isSelected = selectedKey === key;
           return (
-            <g key={key}>
-              <rect
-                x={i * barWidth + 10}
-                y={70 - h}
-                width={Math.max(1, barWidth - 1)}
-                height={h}
-                fill="#00d9ff"
-                opacity={0.7}
-              >
-                <title>{`${key}: ${value} events`}</title>
-              </rect>
-            </g>
+            <rect
+              key={key}
+              x={i * (barWidth + 2)}
+              y={90 - h}
+              width={barWidth}
+              height={h}
+              rx={1}
+              className={`transition-opacity ${isSelected ? "fill-brand-primary opacity-100" : "fill-brand-primary opacity-50 hover:opacity-80"}`}
+            />
           );
         })}
       </svg>
+      {tooltip && (
+        <div
+          className="absolute pointer-events-none z-10 bg-bg-elevated border border-border-default rounded-md px-2 py-1 text-[10px] text-text-primary shadow-lg whitespace-nowrap"
+          style={{ left: tooltip.x, top: tooltip.y, transform: "translate(-50%, -100%)" }}
+        >
+          <span className="font-medium">{tooltip.label}</span>: {tooltip.value} events
+          {onBarClick && <span className="text-text-muted ml-1">· Click to filter</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -86,7 +135,9 @@ interface Props {
 export function InteractiveTimeline({ sessionId }: Props) {
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
   const [searchText, setSearchText] = useState("");
-  const [view, setView] = useState<"chart" | "table">("chart");
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [selectedHour, setSelectedHour] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   const { data: stats } = useQuery({
     queryKey: ["timeline-stats", sessionId],
@@ -110,15 +161,25 @@ export function InteractiveTimeline({ sessionId }: Props) {
       if (typeFilter.size > 0 && !typeFilter.has(e.event_type)) return false;
       if (searchText) {
         const q = searchText.toLowerCase();
-        return (
-          e.description.toLowerCase().includes(q) ||
-          e.event_type.toLowerCase().includes(q) ||
-          (e.source || "").toLowerCase().includes(q)
-        );
+        if (
+          !e.description.toLowerCase().includes(q) &&
+          !e.event_type.toLowerCase().includes(q) &&
+          !(e.source || "").toLowerCase().includes(q)
+        ) return false;
+      }
+      // Filter by selected hour from chart
+      if (selectedHour && e.timestamp) {
+        const eventHour = e.timestamp.slice(11, 13);
+        if (eventHour !== selectedHour.padStart(2, "0")) return false;
+      }
+      // Filter by selected day from chart
+      if (selectedDay && e.timestamp) {
+        const eventDate = e.timestamp.slice(0, 10);
+        if (eventDate !== selectedDay) return false;
       }
       return true;
     });
-  }, [events, typeFilter, searchText]);
+  }, [events, typeFilter, searchText, selectedHour, selectedDay]);
 
   const toggleType = (type: string) => {
     setTypeFilter((prev) => {
@@ -127,6 +188,21 @@ export function InteractiveTimeline({ sessionId }: Props) {
       else next.add(type);
       return next;
     });
+  };
+
+  const handleHourClick = (key: string) => {
+    setSelectedDay(null);
+    setSelectedHour(prev => prev === key ? null : key);
+  };
+
+  const handleDayClick = (key: string) => {
+    setSelectedHour(null);
+    setSelectedDay(prev => prev === key ? null : key);
+  };
+
+  const clearTimeFilter = () => {
+    setSelectedHour(null);
+    setSelectedDay(null);
   };
 
   const exportCsv = () => {
@@ -148,68 +224,31 @@ export function InteractiveTimeline({ sessionId }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Stats summary */}
-      {stats && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <BarChart3 className="h-4 w-4 text-cyan-400" />
-              Event Activity
-              <span className="font-normal text-zinc-400">
-                — {stats.total_events} total events
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <FrequencyChart data={stats.by_hour} />
-            <div className="mt-2 flex flex-wrap gap-3 text-xs text-zinc-400">
-              {stats.busiest_hour && (
-                <span>
-                  Busiest hour: <span className="text-cyan-400">{stats.busiest_hour}</span>
-                </span>
-              )}
-              {stats.busiest_day && (
-                <span>
-                  Busiest day: <span className="text-cyan-400">{stats.busiest_day}</span>
-                </span>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Controls */}
+      {/* Controls — single filter bar */}
       <div className="flex flex-wrap items-center gap-3">
-        {/* View toggle */}
-        <div className="flex rounded-lg border border-zinc-700 overflow-hidden text-xs">
-          <button
-            onClick={() => setView("chart")}
-            className={`px-3 py-1.5 ${view === "chart" ? "bg-cyan-600 text-white" : "bg-zinc-800 text-zinc-400"}`}
-          >
-            Chart
-          </button>
-          <button
-            onClick={() => setView("table")}
-            className={`px-3 py-1.5 ${view === "table" ? "bg-cyan-600 text-white" : "bg-zinc-800 text-zinc-400"}`}
-          >
-            Table
-          </button>
-        </div>
-
         {/* Search */}
         <input
           type="text"
           placeholder="Search events..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-500 w-48"
+          className="rounded-lg border border-border-default bg-bg-elevated px-3 py-1.5 text-xs text-text-primary placeholder:text-text-muted w-48"
         />
 
-        <button onClick={exportCsv} className="flex items-center gap-1 text-xs text-zinc-400 hover:text-cyan-400">
+        {/* Active time filter chip */}
+        {(selectedHour || selectedDay) && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-brand-primary/10 text-brand-primary rounded-full text-[10px] font-medium">
+            <Calendar className="h-3 w-3" />
+            {selectedHour ? `Hour: ${selectedHour}` : `Day: ${selectedDay}`}
+            <button onClick={clearTimeFilter} className="ml-0.5 hover:text-text-primary">×</button>
+          </span>
+        )}
+
+        <button onClick={exportCsv} className="flex items-center gap-1 text-xs text-text-muted hover:text-brand-primary">
           <Download className="h-3 w-3" /> CSV
         </button>
 
-        <span className="text-xs text-zinc-500 ml-auto">
+        <span className="text-xs text-text-muted ml-auto">
           {filteredEvents.length} / {events.length} events
         </span>
       </div>
@@ -222,8 +261,8 @@ export function InteractiveTimeline({ sessionId }: Props) {
             onClick={() => toggleType(type)}
             className={`rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
               typeFilter.size === 0 || typeFilter.has(type)
-                ? "border-cyan-600/40 bg-cyan-600/20 text-cyan-300"
-                : "border-zinc-700 bg-zinc-800 text-zinc-500"
+                ? "border-brand-primary/40 bg-brand-primary/20 text-brand-primary"
+                : "border-border-default bg-bg-elevated text-text-muted"
             }`}
           >
             <span
@@ -235,47 +274,142 @@ export function InteractiveTimeline({ sessionId }: Props) {
         ))}
       </div>
 
-      {/* Event list */}
+      {/* Chart — always visible on top */}
+      {stats && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <BarChart3 className="h-4 w-4 text-brand-primary" />
+              Event Activity
+              <span className="font-normal text-text-muted">
+                — {stats.total_events} total events
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {stats.by_hour && Object.keys(stats.by_hour).length > 0 && (
+              <FrequencyChart data={stats.by_hour} label="Activity by Hour" onBarClick={handleHourClick} selectedKey={selectedHour} />
+            )}
+            {stats.by_day && Object.keys(stats.by_day).length > 0 && (
+              <FrequencyChart data={stats.by_day} label="Activity by Day" onBarClick={handleDayClick} selectedKey={selectedDay} />
+            )}
+            <div className="flex flex-wrap gap-3 text-xs text-text-muted">
+              {stats.busiest_hour && (
+                <span>
+                  Busiest hour: <span className="text-brand-primary">{stats.busiest_hour}</span>
+                </span>
+              )}
+              {stats.busiest_day && (
+                <span>
+                  Busiest day: <span className="text-brand-primary">{stats.busiest_day}</span>
+                </span>
+              )}
+              {stats.by_type && (
+                <span>
+                  Event types: <span className="text-brand-primary">{Object.keys(stats.by_type).length}</span>
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Table — always visible below chart */}
       {isLoading ? (
-        <p className="text-zinc-400 text-sm text-center py-8">Loading timeline...</p>
+        <p className="text-text-muted text-sm text-center py-8">Loading timeline...</p>
       ) : filteredEvents.length === 0 ? (
-        <p className="text-zinc-500 text-sm text-center py-8">No events match filters.</p>
+        <p className="text-text-muted text-sm text-center py-8">No events match filters.</p>
       ) : (
-        <div className="max-h-[600px] overflow-auto rounded-lg border border-zinc-700">
+        <div className="max-h-[600px] overflow-auto rounded-lg border border-border-default">
           <table className="w-full text-xs text-left">
-            <thead className="bg-zinc-800 sticky top-0">
+            <thead className="bg-bg-elevated sticky top-0">
               <tr>
-                <th className="px-3 py-2 text-zinc-400">Time</th>
-                <th className="px-3 py-2 text-zinc-400">Type</th>
-                <th className="px-3 py-2 text-zinc-400">Source</th>
-                <th className="px-3 py-2 text-zinc-400">Description</th>
+                <th className="px-3 py-2 text-text-muted w-6"></th>
+                <th className="px-3 py-2 text-text-muted">Time</th>
+                <th className="px-3 py-2 text-text-muted">Type</th>
+                <th className="px-3 py-2 text-text-muted">Source</th>
+                <th className="px-3 py-2 text-text-muted">Description</th>
               </tr>
             </thead>
             <tbody>
-              {filteredEvents.slice(0, 1000).map((event, i) => (
-                <tr key={i} className="border-t border-zinc-800 hover:bg-zinc-800/50">
-                  <td className="px-3 py-1.5 font-mono text-zinc-400 whitespace-nowrap">
-                    {event.timestamp?.slice(0, 19) || "—"}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <span
-                      className="rounded-full px-2 py-0.5 text-[10px]"
-                      style={{
-                        backgroundColor: getEventColor(event.event_type) + "22",
-                        color: getEventColor(event.event_type),
-                      }}
+              {filteredEvents.slice(0, 1000).map((event, i) => {
+                const isExpanded = expandedRow === i;
+                return (
+                  <>
+                    <tr
+                      key={i}
+                      className="border-t border-border-subtle hover:bg-bg-hover cursor-pointer"
+                      onClick={() => setExpandedRow(isExpanded ? null : i)}
                     >
-                      {event.event_type.replace(/_/g, " ")}
-                    </span>
-                  </td>
-                  <td className="px-3 py-1.5 text-zinc-500 truncate max-w-[120px]">{event.source}</td>
-                  <td className="px-3 py-1.5 text-zinc-300 truncate max-w-[400px]">{event.description}</td>
-                </tr>
-              ))}
+                      <td className="px-3 py-1.5 text-text-muted">
+                        {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-text-secondary whitespace-nowrap">
+                        {event.timestamp?.slice(0, 19) || "—"}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span
+                          className="rounded-full px-2 py-0.5 text-[10px]"
+                          style={{
+                            backgroundColor: getEventColor(event.event_type) + "22",
+                            color: getEventColor(event.event_type),
+                          }}
+                        >
+                          {event.event_type.replace(/_/g, " ")}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-text-muted truncate max-w-[120px]">{event.source}</td>
+                      <td className="px-3 py-1.5 text-text-primary truncate max-w-[400px]">{event.description}</td>
+                    </tr>
+                    {isExpanded && (
+                      <tr key={`${i}-detail`} className="bg-bg-elevated">
+                        <td colSpan={5} className="px-4 py-3">
+                          <div className="space-y-2 text-xs">
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                              <div>
+                                <span className="text-text-muted">Timestamp:</span>{" "}
+                                <span className="font-mono text-text-primary">{event.timestamp}</span>
+                              </div>
+                              <div>
+                                <span className="text-text-muted">Event Type:</span>{" "}
+                                <span className="text-text-primary">{event.event_type}</span>
+                              </div>
+                              <div className="col-span-2">
+                                <span className="text-text-muted">Source:</span>{" "}
+                                <span className="font-mono text-text-primary break-all">{event.source}</span>
+                              </div>
+                              {event.path && (
+                                <div className="col-span-2">
+                                  <span className="text-text-muted">Path:</span>{" "}
+                                  <span className="font-mono text-text-primary break-all">{event.path}</span>
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <span className="text-text-muted">Description:</span>
+                              <div className="mt-1 bg-bg-base rounded p-2 font-mono text-text-secondary whitespace-pre-wrap break-all border border-border-subtle">
+                                {event.description}
+                              </div>
+                            </div>
+                            {event.metadata && Object.keys(event.metadata).length > 0 && (
+                              <div>
+                                <span className="text-text-muted">Metadata:</span>
+                                <div className="mt-1 bg-bg-base rounded p-2 font-mono text-[11px] text-text-secondary whitespace-pre-wrap break-all border border-border-subtle">
+                                  {JSON.stringify(event.metadata, null, 2)}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                );
+              })}
             </tbody>
           </table>
           {filteredEvents.length > 1000 && (
-            <p className="text-center text-xs text-zinc-500 py-2">
+            <p className="text-center text-xs text-text-muted py-2">
               Showing first 1000 of {filteredEvents.length} events. Use filters to narrow down.
             </p>
           )}

@@ -157,7 +157,7 @@ export function GlobalUploadProgress() {
                       )}
                       
                       {/* Progress bar */}
-                      <div className="w-full bg-bg-muted rounded-full h-2 overflow-hidden">
+                      <div className="w-full bg-bg-elevated rounded-full h-2 overflow-hidden">
                         <div
                           className="bg-brand-primary h-2 rounded-full transition-all duration-300"
                           style={{ width: `${job.progress}%` }}

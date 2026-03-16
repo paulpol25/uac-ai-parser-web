@@ -376,13 +376,13 @@ export async function queryAnalysis(
           if (parsed.text) {
             onToken(parsed.text);
           } else if (parsed.full_response) {
-            // Done event with full response
             return;
           } else if (parsed.error) {
             throw new Error(parsed.error);
           }
-        } catch {
-          // Not JSON, skip
+        } catch (e) {
+          // Re-throw server errors; only ignore JSON parse failures
+          if (e instanceof Error && !e.message.includes("JSON")) throw e;
         }
       }
     }
@@ -441,8 +441,9 @@ export async function queryAgenticAnalysis(
           } else if (parsed.error) {
             throw new Error(parsed.error);
           }
-        } catch {
-          // Not JSON, skip
+        } catch (e) {
+          // Re-throw server errors; only ignore JSON parse failures
+          if (e instanceof Error && !e.message.includes("JSON")) throw e;
         }
       }
     }
@@ -1015,6 +1016,8 @@ export interface MitreTechnique {
   tactic: string;
   confidence: number;
   evidence_snippet?: string;
+  evidence_chunk_id?: string;
+  source_file?: string;
 }
 
 export interface MitreSummary {

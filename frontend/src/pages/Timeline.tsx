@@ -19,7 +19,8 @@ import {
   Shield,
   Eye
 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { cn } from "@/utils/cn";
+import { Spinner } from "@/components/ui/Loader";
 import { Input } from "@/components/ui/Input";
 import { ScrollToTop } from "@/components/ui/ScrollToTop";
 import { InteractiveTimeline } from "@/components/features/InteractiveTimeline";
@@ -170,15 +171,13 @@ function EventRow({
                   {event.path}
                 </p>
                 <div className="mt-4">
-                  <Button
-                    size="sm"
-                    variant="secondary"
+                  <button
                     onClick={(e) => { e.stopPropagation(); onAskAI(event); }}
-                    className="w-full"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover hover:text-text-primary transition-colors"
                   >
-                    <Sparkles className="w-4 h-4 mr-2" />
+                    <Sparkles className="w-4 h-4" />
                     Ask AI About This Event
-                  </Button>
+                  </button>
                 </div>
               </div>
             </div>
@@ -313,10 +312,10 @@ export function Timeline() {
               Select an investigation to view the timeline of events.
             </p>
           </div>
-          <Button size="lg" onClick={() => navigate("/investigations")}>
-            <FolderOpen className="w-5 h-5 mr-2" />
+          <button className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => navigate("/investigations")}>
+            <FolderOpen className="w-5 h-5" />
             Select Investigation
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -338,9 +337,9 @@ export function Timeline() {
               Upload a UAC output file to view the timeline.
             </p>
           </div>
-          <Button size="lg" onClick={() => navigate("/")}>
+          <button className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => navigate("/")}>
             Go to Dashboard
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -427,16 +426,14 @@ export function Timeline() {
 
           {/* Event Type Filter */}
           <div className="relative">
-            <Button
-              variant={selectedEventTypes.length > 0 ? "primary" : "secondary"}
-              size="sm"
+            <button
               onClick={() => setShowEventTypeFilter(!showEventTypeFilter)}
-              className="h-8 text-xs px-2"
+              className={cn("flex items-center gap-1 h-8 px-2 text-xs font-medium rounded-lg border transition-colors", selectedEventTypes.length > 0 ? "bg-brand-primary text-white border-brand-primary" : "bg-bg-elevated text-text-secondary border-border-default hover:bg-bg-hover")}
             >
-              <Filter className="w-3.5 h-3.5 mr-1" />
+              <Filter className="w-3.5 h-3.5" />
               {selectedEventTypes.length > 0 ? `${selectedEventTypes.length}` : "Types"}
-              <ChevronDown className="w-3.5 h-3.5 ml-1" />
-            </Button>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
             {showEventTypeFilter && eventTypes.length > 0 && (
               <div className="absolute top-full mt-1 right-0 z-20 bg-bg-surface border border-border-default rounded-lg shadow-xl p-2 min-w-[220px] max-h-[300px] overflow-y-auto">
                 <button
@@ -469,10 +466,8 @@ export function Timeline() {
           </div>
 
           {(startDate || endDate || textSearch || selectedEventTypes.length > 0) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs px-2"
+            <button
+              className="h-8 px-2 text-xs text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-hover transition-colors"
               onClick={() => {
                 setStartDate("");
                 setEndDate("");
@@ -481,13 +476,13 @@ export function Timeline() {
               }}
             >
               <X className="w-3.5 h-3.5" />
-            </Button>
+            </button>
           )}
 
-          <Button variant="secondary" size="sm" className="h-8 text-xs px-2" onClick={handleExport} disabled={filteredEvents.length === 0}>
-            <Download className="w-3.5 h-3.5 mr-1" />
+          <button className="flex items-center gap-1 h-8 px-2 text-xs font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors disabled:opacity-50" onClick={handleExport} disabled={filteredEvents.length === 0}>
+            <Download className="w-3.5 h-3.5" />
             CSV
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -522,8 +517,8 @@ export function Timeline() {
       {viewMode === "table" && (
       <div className="flex-1 bg-bg-surface border border-border-subtle rounded-xl overflow-hidden flex flex-col min-h-0">
         {isLoading && (
-          <div className="flex-1 flex items-center justify-center text-text-muted">
-            <div className="animate-spin w-6 h-6 border-2 border-brand-primary border-t-transparent rounded-full mr-3" />
+          <div className="flex-1 flex items-center justify-center text-text-muted gap-3">
+            <Spinner className="w-5 h-5 text-brand-primary" />
             Loading timeline...
           </div>
         )}
@@ -578,13 +573,13 @@ export function Timeline() {
             
             {filteredEvents.length > visibleCount && (
               <div className="p-4 text-center border-t border-border-subtle bg-bg-surface">
-                <Button
-                  variant="secondary"
+                <button
+                  className="flex items-center gap-2 mx-auto px-4 py-2 text-sm font-medium bg-bg-elevated text-text-secondary border border-border-default rounded-lg hover:bg-bg-hover transition-colors"
                   onClick={() => setVisibleCount(prev => prev + 100)}
                 >
                   Load more ({filteredEvents.length - visibleCount} remaining)
-                  <ChevronDown className="w-4 h-4 ml-2" />
-                </Button>
+                  <ChevronDown className="w-4 h-4" />
+                </button>
               </div>
             )}
           </div>

@@ -1,46 +1,50 @@
 import type { Config } from "tailwindcss";
 
 export default {
+  darkMode: "class",
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
       colors: {
-        // Brand colors
         brand: {
-          primary: "#00D9FF",
-          "primary-hover": "#33E1FF",
-          "primary-muted": "rgba(0, 217, 255, 0.2)",
+          primary: "var(--brand-primary)",
+          "primary-hover": "var(--brand-primary-hover)",
+          "primary-muted": "var(--brand-primary-muted)",
         },
-        // Semantic colors
-        success: "#10B981",
-        warning: "#F59E0B",
-        error: "#EF4444",
-        info: "#6366F1",
-        // Background colors (blue-tinted, not pure gray)
+        success: "var(--color-success)",
+        warning: "var(--color-warning)",
+        error: "var(--color-error)",
+        info: "var(--color-info)",
         bg: {
-          base: "#0A0E14",
-          surface: "#0F1419",
-          elevated: "#1A1F26",
-          hover: "#242B33",
+          base: "var(--bg-base)",
+          surface: "var(--bg-surface)",
+          elevated: "var(--bg-elevated)",
+          hover: "var(--bg-hover)",
         },
-        // Border colors
         border: {
-          subtle: "#1E2530",
-          DEFAULT: "#2D3640",
-          strong: "#3D4650",
+          subtle: "var(--border-subtle)",
+          DEFAULT: "var(--border-default)",
+          default: "var(--border-default)",
+          strong: "var(--border-strong)",
         },
-        // Text colors
         text: {
-          primary: "#E6EDF3",
-          secondary: "#8B949E",
-          muted: "#6E7681",
-          inverse: "#0A0E14",
+          primary: "var(--text-primary)",
+          secondary: "var(--text-secondary)",
+          muted: "var(--text-muted)",
+          inverse: "var(--text-inverse)",
         },
-        // Anomaly score gradient
         anomaly: {
           low: "#10B981",
           medium: "#F59E0B",
           high: "#EF4444",
+          critical: "#DC2626",
+        },
+        forensic: {
+          green: "var(--forensic-green)",
+          amber: "var(--forensic-amber)",
+          red: "var(--forensic-red)",
+          blue: "var(--forensic-blue)",
+          purple: "var(--forensic-purple)",
         },
       },
       fontFamily: {
@@ -65,14 +69,16 @@ export default {
         sm: "0.25rem",
         DEFAULT: "0.5rem",
         lg: "0.75rem",
+        xl: "1rem",
       },
       boxShadow: {
-        sm: "0 1px 2px 0 rgb(0 0 0 / 0.3)",
-        DEFAULT: "0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3)",
-        lg: "0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4)",
-        "glow-primary": "0 0 20px -5px #00D9FF",
-        "glow-error": "0 0 20px -5px #EF4444",
-        "glow-success": "0 0 20px -5px #10B981",
+        sm: "var(--shadow-sm)",
+        DEFAULT: "var(--shadow-md)",
+        lg: "var(--shadow-lg)",
+        "glow-primary": "0 0 20px -5px var(--brand-primary)",
+        "glow-error": "0 0 20px -5px var(--color-error)",
+        "glow-success": "0 0 20px -5px var(--color-success)",
+        "glow-forensic": "0 0 30px -8px var(--forensic-green)",
       },
       transitionTimingFunction: {
         snappy: "cubic-bezier(0.25, 1, 0.5, 1)",
@@ -85,6 +91,9 @@ export default {
         pulse: "pulse 2s ease-in-out infinite",
         shimmer: "shimmer 2s linear infinite",
         "bounce-subtle": "bounceSubtle 1s ease-in-out infinite",
+        "scan-line": "scanLine 3s linear infinite",
+        "border-beam": "borderBeam 4s linear infinite",
+        "grid-fade": "gridFade 3s ease-in-out infinite",
       },
       keyframes: {
         fadeIn: {
@@ -110,6 +119,18 @@ export default {
         bounceSubtle: {
           "0%, 100%": { transform: "translateY(0)" },
           "50%": { transform: "translateY(-2px)" },
+        },
+        scanLine: {
+          "0%": { transform: "translateY(-100%)" },
+          "100%": { transform: "translateY(100%)" },
+        },
+        borderBeam: {
+          "0%": { offsetDistance: "0%" },
+          "100%": { offsetDistance: "100%" },
+        },
+        gridFade: {
+          "0%, 100%": { opacity: "0.3" },
+          "50%": { opacity: "0.6" },
         },
       },
     },

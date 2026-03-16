@@ -4,7 +4,6 @@
 import { useState, useEffect } from "react";
 import { History, ArrowRight, Trash2, Clock } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 
 interface QueryHistoryItem {
   id: string;
@@ -157,13 +156,13 @@ export function QueryHistory({ sessionId, onSelectQuery, compact = false }: Quer
           </CardTitle>
           <div className="flex items-center gap-1">
             {filteredHistory.length > 5 && (
-              <Button size="sm" variant="ghost" onClick={() => setShowAll(!showAll)} className="h-6 text-xs px-2">
+              <button onClick={() => setShowAll(!showAll)} className="h-6 px-2 text-xs text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors">
                 {showAll ? "Less" : "All"}
-              </Button>
+              </button>
             )}
-            <Button size="sm" variant="ghost" onClick={clearHistory} title="Clear history" className="h-6 w-6 p-0">
+            <button onClick={clearHistory} title="Clear history" className="h-6 w-6 p-0 flex items-center justify-center text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors">
               <Trash2 className="w-3 h-3" />
-            </Button>
+            </button>
           </div>
         </div>
       </CardHeader>

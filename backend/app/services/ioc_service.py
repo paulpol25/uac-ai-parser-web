@@ -12,7 +12,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from app.models import db, Entity, IOCEntry, Session
+from app.models import db, Entity, Chunk, IOCEntry, Session
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,10 @@ class IOCService:
             ioc_type = IOC_TYPE_MAP[entity.entity_type]
             normalized = entity.normalized_value or entity.entity_value.lower()
 
+            # Use forensic timestamp from source chunk when available
+            chunk = Chunk.query.filter_by(chunk_id=entity.chunk_id).first()
+            forensic_ts = (chunk.file_modified or chunk.created_at) if chunk else datetime.utcnow()
+
             existing = IOCEntry.query.filter_by(
                 investigation_id=investigation_id,
                 ioc_type=ioc_type,
@@ -68,7 +72,10 @@ class IOCService:
                     session_ids.append(session_id)
                     existing.session_ids = json.dumps(session_ids)
                 existing.occurrence_count += 1
-                existing.last_seen = datetime.utcnow()
+                if forensic_ts and (not existing.last_seen or forensic_ts > existing.last_seen):
+                    existing.last_seen = forensic_ts
+                if forensic_ts and (not existing.first_seen or forensic_ts < existing.first_seen):
+                    existing.first_seen = forensic_ts
             else:
                 ioc = IOCEntry(
                     investigation_id=investigation_id,
@@ -76,8 +83,8 @@ class IOCService:
                     value=entity.entity_value[:500],
                     normalized_value=normalized[:500],
                     session_ids=json.dumps([session_id]),
-                    first_seen=datetime.utcnow(),
-                    last_seen=datetime.utcnow(),
+                    first_seen=forensic_ts,
+                    last_seen=forensic_ts,
                     occurrence_count=1,
                 )
                 db.session.add(ioc)

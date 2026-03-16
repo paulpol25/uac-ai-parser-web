@@ -2,12 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CSS Variables for non-Tailwind contexts */
+/* ========================================
+   UAC AI Forensic Platform — Design Tokens
+   ======================================== */
+
+/* Dark theme (default) */
 :root {
   /* Brand */
   --brand-primary: #00d9ff;
   --brand-primary-hover: #33e1ff;
-  --brand-primary-muted: rgba(0, 217, 255, 0.2);
+  --brand-primary-muted: rgba(0, 217, 255, 0.15);
 
   /* Semantic */
   --color-success: #10b981;
@@ -15,22 +19,38 @@
   --color-error: #ef4444;
   --color-info: #6366f1;
 
-  /* Backgrounds */
-  --bg-base: #0a0e14;
-  --bg-surface: #0f1419;
-  --bg-elevated: #1a1f26;
-  --bg-hover: #242b33;
+  /* Backgrounds — deep blue-black */
+  --bg-base: #07090d;
+  --bg-surface: #0c1017;
+  --bg-elevated: #141922;
+  --bg-hover: #1c2230;
 
   /* Borders */
-  --border-subtle: #1e2530;
-  --border-default: #2d3640;
-  --border-strong: #3d4650;
+  --border-subtle: #1a2030;
+  --border-default: #252d3d;
+  --border-strong: #354055;
 
   /* Text */
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
-  --text-inverse: #0a0e14;
+  --text-primary: #e8edf4;
+  --text-secondary: #8b95a5;
+  --text-muted: #5c6678;
+  --text-inverse: #07090d;
+
+  /* Forensic palette */
+  --forensic-green: #00ff41;
+
+  /* Overlay alphas for login radial gradient */
+  --bg-base-alpha-70: rgba(7, 9, 13, 0.7);
+  --bg-base-alpha-95: rgba(7, 9, 13, 0.95);
+  --forensic-amber: #ffb800;
+  --forensic-red: #ff3333;
+  --forensic-blue: #00b4d8;
+  --forensic-purple: #a855f7;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.6), 0 4px 6px -4px rgb(0 0 0 / 0.4);
 
   /* Typography */
   --font-heading: "Space Grotesk", "Inter", system-ui, sans-serif;
@@ -43,40 +63,87 @@
   --duration-slow: 300ms;
   --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-snappy: cubic-bezier(0.25, 1, 0.5, 1);
-}
 
-/* Base styles */
-html {
   color-scheme: dark;
 }
 
-body {
-  @apply bg-bg-base text-text-primary font-body antialiased;
-  min-height: 100vh;
+/* Light theme */
+.light {
+  --brand-primary: #0891b2;
+  --brand-primary-hover: #0e7490;
+  --brand-primary-muted: rgba(8, 145, 178, 0.1);
+
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+  --color-info: #4f46e5;
+
+  --bg-base: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f1f5f9;
+  --bg-hover: #e2e8f0;
+
+  --border-subtle: #e2e8f0;
+  --border-default: #cbd5e1;
+  --border-strong: #94a3b8;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --text-inverse: #f8fafc;
+
+  --forensic-green: #059669;
+  --forensic-amber: #d97706;
+  --forensic-red: #dc2626;
+  --forensic-blue: #0284c7;
+  --forensic-purple: #7c3aed;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+
+  --bg-base-alpha-70: rgba(248, 250, 252, 0.7);
+  --bg-base-alpha-95: rgba(248, 250, 252, 0.95);
+
+  color-scheme: light;
 }
 
-/* Custom scrollbar */
+/* ========================================
+   Base Styles
+   ======================================== */
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Scrollbar — dark theme */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-bg-base;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: var(--color-border-default);
-  @apply rounded;
+  background-color: var(--border-default);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-border-strong);
+  background-color: var(--border-strong);
 }
 
 /* Focus styles */
 :focus-visible {
-  @apply outline-2 outline-brand-primary outline-offset-2;
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
 }
 
 :focus:not(:focus-visible) {
@@ -86,15 +153,18 @@ body {
 /* Code blocks */
 pre,
 code {
-  @apply font-mono;
+  font-family: var(--font-mono);
 }
 
 /* Selection */
 ::selection {
-  @apply bg-brand-primary/30 text-text-primary;
+  background-color: var(--brand-primary-muted);
+  color: var(--text-primary);
 }
 
-/* Utility classes */
+/* ========================================
+   Utility Classes
+   ======================================== */
 @layer utilities {
   .text-balance {
     text-wrap: balance;
@@ -111,4 +181,85 @@ code {
   .glow-success {
     box-shadow: 0 0 20px -5px var(--color-success);
   }
+
+  /* Forensic grid background */
+  .forensic-grid {
+    background-image:
+      linear-gradient(var(--border-subtle) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* Scanline effect overlay */
+  .scanline-overlay::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.03) 2px,
+      rgba(0, 0, 0, 0.03) 4px
+    );
+    z-index: 1;
+  }
+
+  /* Glass card effect */
+  .glass-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    backdrop-filter: blur(12px);
+  }
+
+  .light .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid var(--border-subtle);
+  }
+
+  /* Terminal-style text effect */
+  .terminal-text {
+    font-family: var(--font-mono);
+    color: var(--forensic-green);
+  }
+}
+
+/* ========================================
+   Keyframes
+   ======================================== */
+@keyframes qp-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes qp-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+@keyframes qp-core {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.4); }
+}
+@keyframes qp-bar {
+  0% { width: 0%; margin-left: 0%; }
+  50% { width: 60%; margin-left: 20%; }
+  100% { width: 0%; margin-left: 100%; }
+}
+
+/* Slide/fade animations */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.15s ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.2s ease-out;
 }

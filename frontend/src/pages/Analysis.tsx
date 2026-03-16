@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Shield, FolderOpen } from "lucide-react";
-import { Button } from "@/components/ui/Button";
 import { MitreAttackMap } from "@/components/features/MitreAttackMap";
 import { IOCDashboard } from "@/components/features/IOCDashboard";
 import { SessionComparison } from "@/components/features/SessionComparison";
@@ -39,17 +38,17 @@ export function Analysis() {
     return (
       <div className="h-full flex flex-col items-center justify-center p-8">
         <div className="max-w-md w-full text-center space-y-6">
-          <div className="w-16 h-16 mx-auto bg-cyan-500/10 rounded-2xl flex items-center justify-center">
-            <Shield className="w-8 h-8 text-cyan-500" />
+          <div className="w-16 h-16 mx-auto bg-brand-primary/10 rounded-2xl flex items-center justify-center border border-brand-primary/20">
+            <Shield className="w-8 h-8 text-brand-primary" />
           </div>
           <div>
             <h1 className="text-2xl font-heading font-semibold mb-2">Analysis</h1>
             <p className="text-text-secondary">Select an investigation to analyze.</p>
           </div>
-          <Button size="lg" onClick={() => navigate("/investigations")}>
-            <FolderOpen className="w-5 h-5 mr-2" />
+          <button className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => navigate("/investigations")}>
+            <FolderOpen className="w-5 h-5" />
             Select Investigation
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -60,8 +59,8 @@ export function Analysis() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-cyan-500/10 rounded-lg flex items-center justify-center">
-            <Shield className="w-4 h-4 text-cyan-500" />
+          <div className="w-8 h-8 bg-brand-primary/10 rounded-lg flex items-center justify-center">
+            <Shield className="w-4 h-4 text-brand-primary" />
           </div>
           <h1 className="text-lg font-heading font-semibold">Analysis</h1>
 
