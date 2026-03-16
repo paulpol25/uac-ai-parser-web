@@ -1048,12 +1048,17 @@ export async function getMitreSummary(sessionId: string): Promise<MitreSummary> 
 
 export interface IOCEntry {
   id: number;
-  ioc_type: string;
+  type: string;
+  ioc_type?: string;
   value: string;
   first_seen: string;
   last_seen: string;
   session_count: number;
+  occurrence_count?: number;
   sessions: string[];
+  geo_country?: string;
+  geo_city?: string;
+  geo_asn?: string;
   context?: string;
 }
 
@@ -1064,8 +1069,11 @@ export interface IOCSummaryData {
 }
 
 export interface IOCCorrelation {
-  cross_session: IOCEntry[];
-  single_session: IOCEntry[];
+  investigation_id: number;
+  total_iocs: number;
+  cross_session_iocs: IOCEntry[];
+  single_session_iocs: IOCEntry[];
+  type_breakdown: Record<string, number>;
 }
 
 export async function iocExtract(sessionId: string): Promise<{ iocs_created: number }> {

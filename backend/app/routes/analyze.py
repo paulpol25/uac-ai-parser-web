@@ -6,8 +6,17 @@ import json
 
 from app.services.analyzer_service import AnalyzerService
 from app.services.agentic_rag_service import AgenticRAGService
+from app.models import Session
 
 analyze_bp = Blueprint("analyze", __name__)
+
+
+def _resolve_session_id(session_id_str: str):
+    """Resolve a UUID session_id string to the integer Session.id PK."""
+    session = Session.query.filter_by(session_id=session_id_str).first()
+    if not session:
+        return None
+    return session.id
 
 
 def get_analyzer() -> AnalyzerService:
@@ -768,9 +777,13 @@ def mitre_scan():
     if not session_id:
         return jsonify({"error": "missing_session_id"}), 400
 
+    resolved_id = _resolve_session_id(session_id)
+    if resolved_id is None:
+        return jsonify({"error": "session_not_found"}), 404
+
     try:
         svc = MitreService()
-        results = svc.scan_session(int(session_id))
+        results = svc.scan_session(resolved_id)
         return jsonify({"techniques": results, "count": len(results)})
     except Exception as e:
         return jsonify({"error": "mitre_scan_error", "message": str(e)}), 500
@@ -785,8 +798,12 @@ def mitre_mappings():
     if not session_id:
         return jsonify({"error": "missing_session_id"}), 400
 
+    resolved_id = _resolve_session_id(session_id)
+    if resolved_id is None:
+        return jsonify({"error": "session_not_found"}), 404
+
     svc = MitreService()
-    return jsonify(svc.get_session_mappings(int(session_id)))
+    return jsonify(svc.get_session_mappings(resolved_id))
 
 
 @analyze_bp.route("/mitre/summary", methods=["GET"])
@@ -798,8 +815,12 @@ def mitre_summary():
     if not session_id:
         return jsonify({"error": "missing_session_id"}), 400
 
+    resolved_id = _resolve_session_id(session_id)
+    if resolved_id is None:
+        return jsonify({"error": "session_not_found"}), 404
+
     svc = MitreService()
-    return jsonify(svc.get_session_summary(int(session_id)))
+    return jsonify(svc.get_session_summary(resolved_id))
 
 
 # ========== IOC Endpoints ==========
@@ -818,8 +839,12 @@ def iocs_extract():
     if not session_id:
         return jsonify({"error": "missing_session_id"}), 400
 
+    resolved_id = _resolve_session_id(session_id)
+    if resolved_id is None:
+        return jsonify({"error": "session_not_found"}), 404
+
     svc = IOCService()
-    count = svc.extract_iocs_for_session(int(session_id))
+    count = svc.extract_iocs_for_session(resolved_id)
     return jsonify({"new_iocs": count})
 
 
@@ -890,9 +915,13 @@ def get_hashes():
     if not session_id:
         return jsonify({"error": "missing_session_id"}), 400
 
+    resolved_id = _resolve_session_id(session_id)
+    if resolved_id is None:
+        return jsonify({"error": "session_not_found"}), 404
+
     unknown_only = request.args.get("unknown_only", "false").lower() == "true"
     svc = HashService()
-    return jsonify(svc.get_session_hashes(int(session_id), unknown_only=unknown_only))
+    return jsonify(svc.get_session_hashes(resolved_id, unknown_only=unknown_only))
 
 
 @analyze_bp.route("/hashes/compare", methods=["POST"])

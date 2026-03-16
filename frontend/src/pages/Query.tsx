@@ -569,13 +569,16 @@ export function Query() {
               >
                 <MessageSquare className="w-4 h-4 shrink-0" />
                 <span className="truncate flex-1 text-left">{chat.title}</span>
-                <button
+                <span
+                  role="button"
+                  tabIndex={0}
                   onClick={(e) => handleDeleteChat(chat.id, e)}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:text-status-error transition-opacity"
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDeleteChat(chat.id, e as unknown as React.MouseEvent); }}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:text-status-error transition-opacity cursor-pointer"
                   title="Delete chat"
                 >
                   <Trash2 className="w-3 h-3" />
-                </button>
+                </span>
               </button>
             ))}
             

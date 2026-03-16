@@ -71,7 +71,12 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
   const allIOCs = useMemo(() => {
     if (searchText.length >= 3 && searchResults?.results) return searchResults.results;
     if (!correlation) return [];
-    return [...correlation.cross_session, ...correlation.single_session];
+    const raw = [...(correlation.cross_session_iocs || []), ...(correlation.single_session_iocs || [])];
+    // Normalize: backend returns "type" but component expects "ioc_type"
+    return raw.map((ioc) => ({
+      ...ioc,
+      ioc_type: ioc.ioc_type ?? ioc.type,
+    }));
   }, [correlation, searchResults, searchText]);
 
   const filteredIOCs = useMemo(() => {
@@ -144,7 +149,7 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
           <option value="all">All types</option>
           {iocTypes.map((t) => (
             <option key={t} value={t}>
-              {t.replace(/_/g, " ")}
+              {(t || "").replace(/_/g, " ")}
             </option>
           ))}
         </select>
@@ -153,7 +158,7 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
       </div>
 
       {/* Cross-session highlight */}
-      {correlation && correlation.cross_session.length > 0 && searchText.length < 3 && (
+      {correlation && (correlation.cross_session_iocs?.length ?? 0) > 0 && searchText.length < 3 && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
@@ -166,8 +171,9 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
           </CardHeader>
           <CardContent>
             <div className="space-y-1.5">
-              {correlation.cross_session.slice(0, 20).map((ioc) => {
-                const Icon = IOC_TYPE_ICONS[ioc.ioc_type] || Fingerprint;
+              {correlation.cross_session_iocs.slice(0, 20).map((ioc) => {
+                const iocType = ioc.ioc_type ?? ioc.type;
+                const Icon = IOC_TYPE_ICONS[iocType] || Fingerprint;
                 return (
                   <div
                     key={ioc.id}
@@ -178,11 +184,11 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
                     <span
                       className="rounded-full px-2 py-0.5 text-[10px]"
                       style={{
-                        backgroundColor: (IOC_TYPE_COLORS[ioc.ioc_type] || "#64748b") + "22",
-                        color: IOC_TYPE_COLORS[ioc.ioc_type] || "#64748b",
+                        backgroundColor: (IOC_TYPE_COLORS[iocType] || "#64748b") + "22",
+                        color: IOC_TYPE_COLORS[iocType] || "#64748b",
                       }}
                     >
-                      {ioc.ioc_type.replace(/_/g, " ")}
+                      {(iocType || "").replace(/_/g, " ")}
                     </span>
                     <span className="text-[10px] text-amber-400 font-medium">
                       {ioc.session_count} sessions
@@ -215,7 +221,8 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
             </thead>
             <tbody>
               {filteredIOCs.slice(0, 500).map((ioc) => {
-                const Icon = IOC_TYPE_ICONS[ioc.ioc_type] || Fingerprint;
+                const iocType = ioc.ioc_type || "";
+                const Icon = IOC_TYPE_ICONS[iocType] || Fingerprint;
                 const isMulti = ioc.session_count > 1;
                 return (
                   <tr
@@ -224,8 +231,8 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
                   >
                     <td className="px-3 py-1.5">
                       <span className="flex items-center gap-1.5">
-                        <Icon className="h-3.5 w-3.5" style={{ color: IOC_TYPE_COLORS[ioc.ioc_type] || "#64748b" }} />
-                        <span className="text-[10px] text-zinc-400">{ioc.ioc_type.replace(/_/g, " ")}</span>
+                        <Icon className="h-3.5 w-3.5" style={{ color: IOC_TYPE_COLORS[iocType] || "#64748b" }} />
+                        <span className="text-[10px] text-zinc-400">{iocType.replace(/_/g, " ")}</span>
                       </span>
                     </td>
                     <td className="px-3 py-1.5 font-mono text-zinc-200 truncate max-w-[300px]">{ioc.value}</td>
