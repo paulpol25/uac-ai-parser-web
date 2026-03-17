@@ -11,6 +11,7 @@ import { Search } from "@/pages/Search";
 import { Export } from "@/pages/Export";
 import { Settings } from "@/pages/Settings";
 import { Analysis } from "@/pages/Analysis";
+import { Agents } from "@/pages/Agents";
 import { useAuthStore } from "@/stores/authStore";
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="search" element={<Search />} />
           <Route path="export" element={<Export />} />
           <Route path="analysis" element={<Analysis />} />
+          <Route path="agents" element={<Agents />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

@@ -71,7 +71,10 @@ def query():
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+                error_msg = str(e)
+                if "429" in error_msg or "rate" in error_msg.lower() or "quota" in error_msg.lower():
+                    error_msg = "LLM rate limit exceeded. Please wait a minute and try again."
+                yield f"event: error\ndata: {json.dumps({'error': error_msg})}\n\n"
     
     return Response(
         generate(),
@@ -140,7 +143,10 @@ def query_agent():
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+                error_msg = str(e)
+                if "429" in error_msg or "rate" in error_msg.lower() or "quota" in error_msg.lower():
+                    error_msg = "LLM rate limit exceeded. Please wait a minute and try again."
+                yield f"event: error\ndata: {json.dumps({'error': error_msg})}\n\n"
     
     return Response(
         generate(),

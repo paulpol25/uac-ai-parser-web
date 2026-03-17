@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
+import React from "react";
 
 interface CardProps {
   children: ReactNode;
@@ -38,14 +39,14 @@ export function CardHeader({ children, className }: CardHeaderProps) {
   );
 }
 
-interface CardTitleProps {
+interface CardTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {
   children: ReactNode;
   className?: string;
 }
 
-export function CardTitle({ children, className }: CardTitleProps) {
+export function CardTitle({ children, className, ...props }: CardTitleProps) {
   return (
-    <h3 className={clsx("font-heading font-semibold text-lg", className)}>
+    <h3 className={clsx("font-heading font-semibold text-lg", className)} {...props}>
       {children}
     </h3>
   );

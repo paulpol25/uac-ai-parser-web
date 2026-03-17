@@ -89,11 +89,9 @@ export function Query() {
     }
   }, [investigationsData, setInvestigations]);
 
-  // Set default investigation to current one and sync when it changes
+  // Set default investigation to current one and sync when it changes (including null = cleared)
   useEffect(() => {
-    if (currentInvestigation) {
-      setSelectedInvestigation(currentInvestigation);
-    }
+    setSelectedInvestigation(currentInvestigation ?? null);
   }, [currentInvestigation]);
 
   // Reset selected session when investigation changes
@@ -522,7 +520,7 @@ export function Query() {
                           <p className="font-medium text-text-primary truncate text-sm">
                             {session.original_filename}
                           </p>
-                          <p className="text-[10px] text-text-muted">
+                          <p className="text-[10px] text-text-muted truncate" title={`${session.total_artifacts} artifacts · ${session.hostname || "Unknown host"} · ${session.os_type || "Unknown OS"}`}>
                             {session.total_artifacts} artifacts · {session.hostname || "Unknown host"} · {session.os_type || "Unknown OS"}
                           </p>
                         </div>

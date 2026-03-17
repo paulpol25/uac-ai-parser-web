@@ -11,8 +11,12 @@ from app.services.llm_providers import ProviderFactory
 
 config_bp = Blueprint("config", __name__)
 
-# Settings file path
-SETTINGS_FILE = Path.home() / '.uac-ai' / 'settings.json'
+# Settings file path — use persistent Docker volume when available
+import os
+SETTINGS_FILE = Path(
+    os.environ.get("UAC_SETTINGS_PATH",
+                   "/app/data/settings.json" if os.path.isdir("/app/data") else str(Path.home() / '.uac-ai' / 'settings.json'))
+)
 
 def _get_processing_settings() -> dict:
     """Get processing settings from file or defaults."""
@@ -542,3 +546,108 @@ def get_ollama_config():
             "error": "config_error",
             "message": str(e)
         }), 500
+
+
+# ===== Integration Settings =====
+
+def _get_integration_settings() -> dict:
+    """Get integration settings from settings file."""
+    defaults = {
+        "sheetstorm_url": "",
+        "sheetstorm_api_token": "",
+        "sheetstorm_username": "",
+        "sheetstorm_password": "",
+    }
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, "r") as f:
+                saved = json.load(f)
+                return {**defaults, **saved.get("integrations", {})}
+        except Exception:
+            pass
+    return defaults
+
+
+def _save_integration_settings(settings: dict) -> None:
+    """Save integration settings to settings file."""
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    existing = {}
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, "r") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+
+    existing["integrations"] = settings
+
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(existing, f, indent=2)
+
+
+def _apply_integration_to_app(settings: dict) -> None:
+    """Push integration values into Flask config so SheetstormService picks them up."""
+    current_app.config["SHEETSTORM_API_URL"] = settings.get("sheetstorm_url", "")
+    current_app.config["SHEETSTORM_API_TOKEN"] = settings.get("sheetstorm_api_token", "")
+    current_app.config["SHEETSTORM_USERNAME"] = settings.get("sheetstorm_username", "")
+    current_app.config["SHEETSTORM_PASSWORD"] = settings.get("sheetstorm_password", "")
+
+
+@config_bp.route("/settings/integrations", methods=["GET"])
+def get_integration_settings():
+    """Get integration settings (Sheetstorm, etc.)."""
+    try:
+        settings = _get_integration_settings()
+        # Mask secrets
+        safe = {**settings}
+        for key in ("sheetstorm_api_token", "sheetstorm_password"):
+            val = safe.get(key, "")
+            if val:
+                safe[key] = "****" + val[-4:] if len(val) > 4 else "****"
+                safe[f"{key}_set"] = True
+            else:
+                safe[f"{key}_set"] = False
+        return jsonify(safe)
+    except Exception as e:
+        return jsonify({"error": "settings_error", "message": str(e)}), 500
+
+
+@config_bp.route("/settings/integrations", methods=["PUT"])
+def update_integration_settings():
+    """Update integration settings."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "missing_data", "message": "Request body is required"}), 400
+
+    try:
+        current = _get_integration_settings()
+
+        valid_keys = ["sheetstorm_url", "sheetstorm_api_token", "sheetstorm_username", "sheetstorm_password"]
+        for key in valid_keys:
+            if key in data:
+                current[key] = str(data[key])
+
+        _save_integration_settings(current)
+        _apply_integration_to_app(current)
+
+        return jsonify({"message": "Integration settings updated", "settings": {
+            k: (current[k] if k in ("sheetstorm_url", "sheetstorm_username") else ("****" if current[k] else ""))
+            for k in valid_keys
+        }})
+    except Exception as e:
+        return jsonify({"error": "update_error", "message": str(e)}), 500
+
+
+@config_bp.route("/settings/integrations/test", methods=["POST"])
+def test_integration():
+    """Test Sheetstorm integration connectivity."""
+    try:
+        from app.services.sheetstorm_service import SheetstormService
+        svc = SheetstormService()
+        if not svc.enabled:
+            return jsonify({"success": False, "message": "Sheetstorm URL not configured"})
+        svc.list_incidents(limit=1)
+        return jsonify({"success": True, "message": "Successfully connected to Sheetstorm"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})

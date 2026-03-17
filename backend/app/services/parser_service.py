@@ -134,7 +134,7 @@ class ParserService:
             # Update session with final stats
             report("finalize", 95, "Finalizing...")
             session.total_chunks = rag_stats["chunks_created"]
-            session.status = "ready"
+            # Don't override status - ingest_session sets "searchable" and background thread will set "ready"
             db.session.commit()
             
             # Generate summary and preview
@@ -432,7 +432,7 @@ class ParserService:
                 
                 try:
                     for line in hash_file.read_text(errors="replace").splitlines():
-                        line = line.strip()
+                        line = line.strip().replace('\x00', '')
                         if not line or line.startswith("#"):
                             continue
                         # Format: <hash>  <filepath> or <hash> <filepath>

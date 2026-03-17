@@ -13,6 +13,7 @@ export interface UploadJob {
   sessionId?: string;
   startedAt: Date;
   completedAt?: Date;
+  abortController?: AbortController;
 }
 
 // Human-readable step names
@@ -38,6 +39,7 @@ interface UploadState {
   addJob: (job: Omit<UploadJob, "id" | "startedAt">) => string;
   updateJob: (id: string, updates: Partial<UploadJob>) => void;
   removeJob: (id: string) => void;
+  cancelJob: (id: string) => void;
   clearCompleted: () => void;
   getActiveJobs: () => UploadJob[];
 }
@@ -67,6 +69,18 @@ export const useUploadStore = create<UploadState>((set, get) => ({
   removeJob: (id) => {
     set((state) => ({
       jobs: state.jobs.filter((job) => job.id !== id),
+    }));
+  },
+  
+  cancelJob: (id) => {
+    const job = get().jobs.find((j) => j.id === id);
+    if (job?.abortController) {
+      job.abortController.abort();
+    }
+    set((state) => ({
+      jobs: state.jobs.map((j) =>
+        j.id === id ? { ...j, status: "error" as const, error: "Cancelled by user" } : j
+      ),
     }));
   },
   

@@ -57,5 +57,16 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Set working directory to backend for proper module resolution
 WORKDIR /app/backend
 
-# Start command - use gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "--timeout", "300", "--preload", "run:app"]
+# Start command - use gunicorn for production with multiple workers.
+# Each worker is a separate OS process with its own gevent event loop,
+# so CPU-bound work (embeddings, cross-encoder reranking, parsing) in one
+# worker does not block requests handled by the other workers.
+# SocketIO cross-worker messaging uses the Redis message queue.
+CMD exec gunicorn \
+    --bind 0.0.0.0:5000 \
+    --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker \
+    --workers ${GUNICORN_WORKERS:-2} \
+    --timeout 7200 \
+    --access-logfile - \
+    --preload \
+    run:app

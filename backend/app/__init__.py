@@ -5,13 +5,20 @@ Creates and configures the Flask application instance.
 """
 import os
 import logging
-from flask import Flask
+from flask import Flask, request as flask_request
 from flask_cors import CORS
 from flask_migrate import Migrate
-from sqlalchemy import event
+from sqlalchemy import event, text
 
 from config import config_by_name
 from app.models import db
+
+# Configure root logger so all logger.info/warning/error calls actually print
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 logger = logging.getLogger(__name__)
 migrate = Migrate()
@@ -29,6 +36,19 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 def _is_sqlite(app):
     """Check if the configured database is SQLite."""
     return app.config.get("SQLALCHEMY_DATABASE_URI", "").startswith("sqlite")
+
+
+def _sqlite_migrate(db):
+    """Add columns to existing SQLite tables that db.create_all() can't handle."""
+    migrations = [
+        ("investigations", "sheetstorm_incident_id", "VARCHAR(100)"),
+    ]
+    with db.engine.connect() as conn:
+        for table, column, col_type in migrations:
+            cols = [row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))]
+            if column not in cols:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+                conn.commit()
 
 
 def _cleanup_stuck_sessions():
@@ -66,6 +86,36 @@ def _init_redis(app):
         app.redis = None
 
 
+def _load_integration_settings(app):
+    """Load saved integration settings into Flask app config at startup."""
+    from pathlib import Path
+    import json
+    import os as _os
+    settings_file = Path(
+        _os.environ.get("UAC_SETTINGS_PATH",
+                        "/app/data/settings.json" if _os.path.isdir("/app/data") else str(Path.home() / ".uac-ai" / "settings.json"))
+    )
+    if settings_file.exists():
+        try:
+            with open(settings_file, "r") as f:
+                saved = json.load(f)
+            integrations = saved.get("integrations", {})
+            mapping = {
+                "sheetstorm_url": "SHEETSTORM_API_URL",
+                "sheetstorm_api_token": "SHEETSTORM_API_TOKEN",
+                "sheetstorm_username": "SHEETSTORM_USERNAME",
+                "sheetstorm_password": "SHEETSTORM_PASSWORD",
+            }
+            for src, dest in mapping.items():
+                val = integrations.get(src, "")
+                if val:
+                    app.config[dest] = val
+            if integrations.get("sheetstorm_url"):
+                logger.info("[Integrations] Sheetstorm integration loaded from saved settings")
+        except Exception as e:
+            logger.warning(f"[Integrations] Failed to load settings: {e}")
+
+
 def create_app(config_name: str | None = None) -> Flask:
     """
     Application factory for creating the Flask app.
@@ -100,12 +150,23 @@ def create_app(config_name: str | None = None) -> Flask:
             event.listen(db.engine, "connect", _set_sqlite_pragma)
             # Auto-create tables for SQLite dev; PostgreSQL uses migrations/init scripts
             db.create_all()
+            # Add columns that create_all can't add to existing tables
+            _sqlite_migrate(db)
         
         # Cleanup any sessions stuck in "processing" state from previous crashes
         _cleanup_stuck_sessions()
     
+    # Load saved integration settings into Flask config
+    _load_integration_settings(app)
+    
     # Initialize Redis (for caching / MCP session persistence)
     _init_redis(app)
+    
+    # Log every request so we can see frontend traffic
+    @app.after_request
+    def log_request(response):
+        logger.info("%s %s %s", flask_request.method, flask_request.path, response.status_code)
+        return response
     
     # Register blueprints
     from app.routes.health import health_bp
@@ -119,6 +180,8 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.routes.search import search_bp
     from app.routes.chats import chats_bp
     from app.routes.admin import admin_bp
+    from app.routes.agents import agents_bp
+    from app.routes.sheetstorm import sheetstorm_bp
     
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(auth_bp, url_prefix="/api/v1/auth")
@@ -131,6 +194,12 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(search_bp, url_prefix="/api/v1/search")
     app.register_blueprint(chats_bp, url_prefix="/api/v1/chats")
     app.register_blueprint(admin_bp, url_prefix="/api/v1/admin")
+    app.register_blueprint(agents_bp, url_prefix="/api/v1/agents")
+    app.register_blueprint(sheetstorm_bp, url_prefix="/api/v1/sheetstorm")
+    
+    # Initialize WebSocket support
+    from app.websocket import init_socketio
+    init_socketio(app)
     
     # Serve static files in production (when built frontend is present)
     static_folder = os.environ.get("STATIC_FOLDER") or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")

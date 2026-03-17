@@ -10,8 +10,13 @@ Database schema following RAG_DESIGN.md tiered storage principles:
 from datetime import datetime
 from typing import Optional
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import String
+from sqlalchemy.dialects.postgresql import UUID as PgUUID
 
 db = SQLAlchemy()
+
+# UUID column type: native UUID on PostgreSQL, String(36) on SQLite
+_UUIDType = String(36).with_variant(PgUUID(as_uuid=False), "postgresql")
 
 
 class User(db.Model):
@@ -70,10 +75,14 @@ class Investigation(db.Model):
     # Status
     status = db.Column(db.String(20), default="active")  # active, archived, deleted
     
+    # Sheetstorm integration
+    sheetstorm_incident_id = db.Column(db.String(100), nullable=True)
+    
     # Relationships
     user = db.relationship("User", back_populates="investigations")
-    sessions = db.relationship("Session", back_populates="investigation", lazy="dynamic")
-    queries = db.relationship("QueryLog", back_populates="investigation", lazy="dynamic")
+    sessions = db.relationship("Session", back_populates="investigation", lazy="dynamic", passive_deletes=True)
+    queries = db.relationship("QueryLog", back_populates="investigation", lazy="dynamic", passive_deletes=True)
+    agents = db.relationship("Agent", back_populates="investigation", lazy="dynamic", passive_deletes=True)
     
     def __repr__(self):
         return f"<Investigation {self.name}>"
@@ -90,7 +99,7 @@ class Session(db.Model):
     session_id = db.Column(db.String(36), unique=True, nullable=False, index=True)  # UUID
     
     # Foreign keys
-    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id"), nullable=False, index=True)
+    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # File info
     original_filename = db.Column(db.String(255), nullable=False)
@@ -117,7 +126,7 @@ class Session(db.Model):
     
     # Relationships
     investigation = db.relationship("Investigation", back_populates="sessions")
-    chunks = db.relationship("Chunk", back_populates="session", lazy="dynamic")
+    chunks = db.relationship("Chunk", back_populates="session", lazy="dynamic", passive_deletes=True)
     
     def __repr__(self):
         return f"<Session {self.session_id}>"
@@ -139,7 +148,7 @@ class Chunk(db.Model):
     chunk_id = db.Column(db.String(64), unique=True, nullable=False, index=True)  # Hash-based ID
     
     # Foreign keys
-    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=False, index=True)
+    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Content
     content = db.Column(db.Text, nullable=False)
@@ -193,8 +202,8 @@ class Entity(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     
     # Foreign keys - link to session AND specific chunk
-    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=False, index=True)
-    chunk_id = db.Column(db.String(64), db.ForeignKey("chunks.chunk_id"), nullable=False, index=True)
+    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    chunk_id = db.Column(db.String(64), db.ForeignKey("chunks.chunk_id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Entity info
     entity_type = db.Column(db.String(30), nullable=False, index=True)  # ip, domain, username, filepath, command, timestamp
@@ -240,18 +249,18 @@ class EntityRelationship(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     
     # Foreign keys - link to session
-    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=False, index=True)
+    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Source and target entities
-    source_entity_id = db.Column(db.Integer, db.ForeignKey("entities.id"), nullable=False, index=True)
-    target_entity_id = db.Column(db.Integer, db.ForeignKey("entities.id"), nullable=False, index=True)
+    source_entity_id = db.Column(db.Integer, db.ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_entity_id = db.Column(db.Integer, db.ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Relationship metadata
     relationship_type = db.Column(db.String(50), nullable=False, index=True)  # executed, accessed, connected_from, created, modified, downloaded_to
     confidence = db.Column(db.Float, default=1.0)  # How confident we are in this relationship
     
     # Evidence
-    evidence_chunk_id = db.Column(db.String(64), db.ForeignKey("chunks.chunk_id"), nullable=False)
+    evidence_chunk_id = db.Column(db.String(64), db.ForeignKey("chunks.chunk_id", ondelete="CASCADE"), nullable=False)
     evidence_snippet = db.Column(db.String(300), nullable=True)  # Context showing the relationship
     
     # Timestamps
@@ -284,7 +293,7 @@ class QueryLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     
     # Foreign keys
-    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id"), nullable=False, index=True)
+    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     
     # Query details
@@ -334,8 +343,8 @@ class ChunkRelevance(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     
     # Foreign keys
-    chunk_id = db.Column(db.String(64), db.ForeignKey("chunks.chunk_id"), nullable=False, index=True)
-    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=False, index=True)
+    chunk_id = db.Column(db.String(64), db.ForeignKey("chunks.chunk_id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Relevance metrics
     citation_count = db.Column(db.Integer, default=0)  # Times explicitly cited
@@ -386,7 +395,7 @@ class Chat(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     
     # Foreign keys
-    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=False, index=True)
+    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     
     # Chat metadata
@@ -400,7 +409,7 @@ class Chat(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    session = db.relationship("Session", backref=db.backref("chats", lazy="dynamic"))
+    session = db.relationship("Session", backref=db.backref("chats", lazy="dynamic", passive_deletes=True))
     user = db.relationship("User", backref=db.backref("chats", lazy="dynamic"))
     messages = db.relationship("ChatMessage", back_populates="chat", lazy="dynamic", cascade="all, delete-orphan")
     
@@ -445,19 +454,19 @@ class MitreMapping(db.Model):
     __tablename__ = "mitre_mappings"
     
     id = db.Column(db.Integer, primary_key=True)
-    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=False, index=True)
+    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     
     technique_id = db.Column(db.String(20), nullable=False, index=True)  # e.g. T1053.003
     technique_name = db.Column(db.String(200), nullable=False)
     tactic = db.Column(db.String(50), nullable=False, index=True)  # e.g. persistence
     
     confidence = db.Column(db.Float, default=0.5)  # 0-1
-    evidence_chunk_id = db.Column(db.String(64), db.ForeignKey("chunks.chunk_id"), nullable=True)
+    evidence_chunk_id = db.Column(db.String(64), db.ForeignKey("chunks.chunk_id", ondelete="SET NULL"), nullable=True)
     evidence_snippet = db.Column(db.Text, nullable=True)
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    session = db.relationship("Session", backref=db.backref("mitre_mappings", lazy="dynamic"))
+    session = db.relationship("Session", backref=db.backref("mitre_mappings", lazy="dynamic", passive_deletes=True))
     
     __table_args__ = (
         db.Index("idx_mitre_session_tactic", "session_id", "tactic"),
@@ -472,7 +481,7 @@ class IOCEntry(db.Model):
     __tablename__ = "ioc_entries"
     
     id = db.Column(db.Integer, primary_key=True)
-    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id"), nullable=False, index=True)
+    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True)
     
     ioc_type = db.Column(db.String(30), nullable=False, index=True)  # ip, domain, url, hash, email, user_agent
     value = db.Column(db.String(500), nullable=False, index=True)
@@ -495,7 +504,7 @@ class IOCEntry(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    investigation = db.relationship("Investigation", backref=db.backref("ioc_entries", lazy="dynamic"))
+    investigation = db.relationship("Investigation", backref=db.backref("ioc_entries", lazy="dynamic", passive_deletes=True))
     
     __table_args__ = (
         db.Index("idx_ioc_investigation_type", "investigation_id", "ioc_type"),
@@ -511,7 +520,7 @@ class FileHash(db.Model):
     __tablename__ = "file_hashes"
     
     id = db.Column(db.Integer, primary_key=True)
-    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id"), nullable=False, index=True)
+    session_id = db.Column(db.Integer, db.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True)
     
     file_path = db.Column(db.String(500), nullable=False)
     hash_md5 = db.Column(db.String(32), nullable=True, index=True)
@@ -523,7 +532,7 @@ class FileHash(db.Model):
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    session = db.relationship("Session", backref=db.backref("file_hashes", lazy="dynamic"))
+    session = db.relationship("Session", backref=db.backref("file_hashes", lazy="dynamic", passive_deletes=True))
     
     __table_args__ = (
         db.Index("idx_filehash_session", "session_id"),
@@ -538,7 +547,7 @@ class CleanupPolicy(db.Model):
     __tablename__ = "cleanup_policies"
     
     id = db.Column(db.Integer, primary_key=True)
-    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id"), nullable=True, unique=True)
+    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id", ondelete="CASCADE"), nullable=True, unique=True)
     
     retention_days = db.Column(db.Integer, default=90)  # 0 = never auto-delete
     delete_extracted_after_parse = db.Column(db.Boolean, default=True)
@@ -546,10 +555,88 @@ class CleanupPolicy(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    investigation = db.relationship("Investigation", backref=db.backref("cleanup_policy", uselist=False))
+    investigation = db.relationship("Investigation", backref=db.backref("cleanup_policy", uselist=False, passive_deletes=True))
     
     def __repr__(self):
         return f"<CleanupPolicy inv={self.investigation_id} days={self.retention_days}>"
+
+
+class Agent(db.Model):
+    """Deployed forensic collection agent on a target machine."""
+    __tablename__ = "agents"
+    
+    id = db.Column(_UUIDType, primary_key=True)
+    investigation_id = db.Column(db.Integer, db.ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    hostname = db.Column(db.String(255), nullable=True)
+    os_info = db.Column(db.String(255), nullable=True)
+    ip_address = db.Column(db.String(45), nullable=True)
+    
+    status = db.Column(db.String(20), nullable=False, default="registered")
+    agent_version = db.Column(db.String(20), nullable=True)
+    api_key = db.Column(db.String(128), unique=True, nullable=False, index=True)
+    
+    last_heartbeat = db.Column(db.DateTime, nullable=True)
+    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
+    config = db.Column(db.JSON, nullable=True)
+    
+    # Relationships
+    investigation = db.relationship("Investigation", back_populates="agents")
+    commands = db.relationship("AgentCommand", back_populates="agent", lazy="dynamic", cascade="all, delete-orphan")
+    events = db.relationship("AgentEvent", back_populates="agent", lazy="dynamic", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<Agent {self.id[:8]} host={self.hostname} status={self.status}>"
+
+
+class AgentCommand(db.Model):
+    """Command dispatched from backend to a remote agent."""
+    __tablename__ = "agent_commands"
+    
+    id = db.Column(_UUIDType, primary_key=True)
+    agent_id = db.Column(_UUIDType, db.ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    command_type = db.Column(db.String(30), nullable=False)  # run_uac, exec_command, collect_file, run_check, shutdown
+    payload = db.Column(db.JSON, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default="pending")
+    result = db.Column(db.JSON, nullable=True)
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    
+    # Relationships
+    agent = db.relationship("Agent", back_populates="commands")
+    
+    __table_args__ = (
+        db.Index("idx_agent_commands_status", "agent_id", "status"),
+    )
+    
+    def __repr__(self):
+        return f"<AgentCommand {self.id[:8]} type={self.command_type} status={self.status}>"
+
+
+class AgentEvent(db.Model):
+    """Audit log entry for agent activity."""
+    __tablename__ = "agent_events"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    agent_id = db.Column(_UUIDType, db.ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    event_type = db.Column(db.String(50), nullable=False)  # heartbeat, status_change, upload_complete, command_result, error
+    data = db.Column(db.JSON, nullable=True)
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    agent = db.relationship("Agent", back_populates="events")
+    
+    __table_args__ = (
+        db.Index("idx_agent_events_type", "agent_id", "event_type"),
+    )
+    
+    def __repr__(self):
+        return f"<AgentEvent {self.event_type} agent={self.agent_id[:8]}>"
 
 
 # Export all models
@@ -557,4 +644,5 @@ __all__ = [
     "db", "User", "AuthToken", "Investigation", "Session", "Chunk",
     "Entity", "EntityRelationship", "QueryLog", "ChunkRelevance",
     "Chat", "ChatMessage", "MitreMapping", "IOCEntry", "FileHash", "CleanupPolicy",
+    "Agent", "AgentCommand", "AgentEvent",
 ]

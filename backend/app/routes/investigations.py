@@ -5,11 +5,12 @@ Handles CRUD operations for investigations and sessions.
 """
 import logging
 import shutil
+import subprocess
 from pathlib import Path
 from flask import Blueprint, request, jsonify, g
 from datetime import datetime
 
-from app.models import db, Investigation, Session, User, Chunk
+from app.models import db, Investigation, Session, User, Chunk, FileHash, Entity, EntityRelationship, ChunkRelevance, Chat, MitreMapping
 from app.services.auth_providers import get_auth_provider
 
 logger = logging.getLogger(__name__)
@@ -192,6 +193,14 @@ def update_investigation(investigation_id: int):
     })
 
 
+def _safe_rmtree(path: Path):
+    """Remove a directory tree using subprocess to avoid Python EMFILE errors."""
+    try:
+        subprocess.run(["rm", "-rf", str(path)], timeout=120, check=False)
+    except Exception as e:
+        logger.warning(f"Could not delete {path}: {e}")
+
+
 @investigations_bp.route("/<int:investigation_id>", methods=["DELETE"])
 def delete_investigation(investigation_id: int):
     """Hard-delete an investigation and all associated files."""
@@ -208,44 +217,30 @@ def delete_investigation(investigation_id: int):
             "message": "Investigation not found"
         }), 404
     
-    # Delete all session files and data
+    # Collect file paths to delete after DB commit
     sessions = Session.query.filter_by(investigation_id=investigation_id).all()
-    files_deleted = 0
-    
+    paths_to_delete = []
     for session in sessions:
-        # Delete extracted files directory
         if session.extract_path:
-            extract_path = Path(session.extract_path)
-            if extract_path.exists():
-                try:
-                    shutil.rmtree(extract_path)
-                    files_deleted += 1
-                except Exception as e:
-                    logger.warning(f"Could not delete extract path {extract_path}: {e}")
-        
-        # Delete archive file
+            p = Path(session.extract_path)
+            if p.exists():
+                paths_to_delete.append(p)
         if session.archive_path:
-            archive_path = Path(session.archive_path)
-            if archive_path.exists():
-                try:
-                    archive_path.unlink()
-                    files_deleted += 1
-                except Exception as e:
-                    logger.warning(f"Could not delete archive {archive_path}: {e}")
-        
-        # Delete chunks from database
-        Chunk.query.filter_by(session_id=session.id).delete()
+            p = Path(session.archive_path)
+            if p.exists():
+                paths_to_delete.append(p)
     
-    # Delete all sessions
-    Session.query.filter_by(investigation_id=investigation_id).delete()
-    
-    # Delete investigation
+    # Delete investigation — ON DELETE CASCADE handles all child rows
     db.session.delete(investigation)
     db.session.commit()
     
+    # Clean up filesystem after successful DB commit
+    for p in paths_to_delete:
+        _safe_rmtree(p)
+    
     return jsonify({
         "message": "Investigation and all associated files deleted",
-        "files_deleted": files_deleted
+        "files_deleted": len(paths_to_delete)
     })
 
 
@@ -324,33 +319,27 @@ def delete_session(investigation_id: int, session_id: str):
         }), 404
     
     files_deleted = 0
+    paths_to_delete = []
     
-    # Delete extracted files directory
+    # Collect file paths before DB deletion
     if session.extract_path:
-        extract_path = Path(session.extract_path)
-        if extract_path.exists():
-            try:
-                shutil.rmtree(extract_path)
-                files_deleted += 1
-            except Exception as e:
-                logger.warning(f"Could not delete extract path {extract_path}: {e}")
+        p = Path(session.extract_path)
+        if p.exists():
+            paths_to_delete.append(p)
     
-    # Delete archive file
     if session.archive_path:
-        archive_path = Path(session.archive_path)
-        if archive_path.exists():
-            try:
-                archive_path.unlink()
-                files_deleted += 1
-            except Exception as e:
-                logger.warning(f"Could not delete archive {archive_path}: {e}")
+        p = Path(session.archive_path)
+        if p.exists():
+            paths_to_delete.append(p)
     
-    # Delete chunks from database
-    Chunk.query.filter_by(session_id=session.id).delete()
-    
-    # Delete the session record
+    # Delete session — ON DELETE CASCADE handles child rows
     db.session.delete(session)
     db.session.commit()
+    
+    # Clean up filesystem after DB commit
+    for p in paths_to_delete:
+        _safe_rmtree(p)
+        files_deleted += 1
     
     return jsonify({
         "message": "Session and files deleted",

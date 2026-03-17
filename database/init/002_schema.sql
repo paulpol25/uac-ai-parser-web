@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_investigations_user ON investigations (user_id);
 CREATE TABLE IF NOT EXISTS sessions (
     id SERIAL PRIMARY KEY,
     session_id VARCHAR(36) UNIQUE NOT NULL,
-    investigation_id INTEGER NOT NULL REFERENCES investigations(id),
+    investigation_id INTEGER NOT NULL REFERENCES investigations(id) ON DELETE CASCADE,
     original_filename VARCHAR(255) NOT NULL,
     file_hash VARCHAR(64),
     file_size BIGINT,
@@ -64,7 +64,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_investigation ON sessions (investigation
 CREATE TABLE IF NOT EXISTS chunks (
     id SERIAL PRIMARY KEY,
     chunk_id VARCHAR(64) UNIQUE NOT NULL,
-    session_id INTEGER NOT NULL REFERENCES sessions(id),
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     content_hash VARCHAR(64) NOT NULL,
     token_count INTEGER NOT NULL,
@@ -89,8 +89,8 @@ CREATE INDEX IF NOT EXISTS idx_chunk_session_category ON chunks (session_id, art
 -- Entities
 CREATE TABLE IF NOT EXISTS entities (
     id SERIAL PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES sessions(id),
-    chunk_id VARCHAR(64) NOT NULL REFERENCES chunks(chunk_id),
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    chunk_id VARCHAR(64) NOT NULL REFERENCES chunks(chunk_id) ON DELETE CASCADE,
     entity_type VARCHAR(30) NOT NULL,
     entity_value VARCHAR(500) NOT NULL,
     normalized_value VARCHAR(500),
@@ -110,12 +110,12 @@ CREATE INDEX IF NOT EXISTS idx_entity_session_value ON entities (session_id, nor
 -- Entity relationships (Graph RAG)
 CREATE TABLE IF NOT EXISTS entity_relationships (
     id SERIAL PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES sessions(id),
-    source_entity_id INTEGER NOT NULL REFERENCES entities(id),
-    target_entity_id INTEGER NOT NULL REFERENCES entities(id),
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    source_entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    target_entity_id INTEGER NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
     relationship_type VARCHAR(50) NOT NULL,
     confidence FLOAT DEFAULT 1.0,
-    evidence_chunk_id VARCHAR(64) NOT NULL REFERENCES chunks(chunk_id),
+    evidence_chunk_id VARCHAR(64) NOT NULL REFERENCES chunks(chunk_id) ON DELETE CASCADE,
     evidence_snippet VARCHAR(300),
     created_at TIMESTAMP DEFAULT NOW(),
     CONSTRAINT uq_entity_relationship UNIQUE (source_entity_id, target_entity_id, relationship_type, evidence_chunk_id)
@@ -127,7 +127,7 @@ CREATE INDEX IF NOT EXISTS idx_rel_type_source ON entity_relationships (relation
 -- Query logs (with cached responses)
 CREATE TABLE IF NOT EXISTS query_logs (
     id SERIAL PRIMARY KEY,
-    investigation_id INTEGER NOT NULL REFERENCES investigations(id),
+    investigation_id INTEGER NOT NULL REFERENCES investigations(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES users(id),
     query_text TEXT NOT NULL,
     query_hash VARCHAR(64) NOT NULL,
@@ -148,8 +148,8 @@ CREATE INDEX IF NOT EXISTS idx_query_logs_hash ON query_logs (query_hash);
 -- Chunk relevance feedback
 CREATE TABLE IF NOT EXISTS chunk_relevance (
     id SERIAL PRIMARY KEY,
-    chunk_id VARCHAR(64) NOT NULL REFERENCES chunks(chunk_id),
-    session_id INTEGER NOT NULL REFERENCES sessions(id),
+    chunk_id VARCHAR(64) NOT NULL REFERENCES chunks(chunk_id) ON DELETE CASCADE,
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     citation_count INTEGER DEFAULT 0,
     usage_count INTEGER DEFAULT 0,
     retrieval_count INTEGER DEFAULT 0,
@@ -164,7 +164,7 @@ CREATE INDEX IF NOT EXISTS idx_chunk_relevance_session_score ON chunk_relevance 
 -- Chats
 CREATE TABLE IF NOT EXISTS chats (
     id SERIAL PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES sessions(id),
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES users(id),
     title VARCHAR(255),
     is_active BOOLEAN DEFAULT TRUE,
@@ -190,12 +190,12 @@ CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON chat_messages (chat_id);
 -- MITRE ATT&CK mappings
 CREATE TABLE IF NOT EXISTS mitre_mappings (
     id SERIAL PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES sessions(id),
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     technique_id VARCHAR(20) NOT NULL,
     technique_name VARCHAR(200) NOT NULL,
     tactic VARCHAR(50) NOT NULL,
     confidence FLOAT DEFAULT 0.5,
-    evidence_chunk_id VARCHAR(64) REFERENCES chunks(chunk_id),
+    evidence_chunk_id VARCHAR(64) REFERENCES chunks(chunk_id) ON DELETE SET NULL,
     evidence_snippet TEXT,
     created_at TIMESTAMP DEFAULT NOW()
 );
@@ -207,7 +207,7 @@ CREATE INDEX IF NOT EXISTS idx_mitre_session_tactic ON mitre_mappings (session_i
 -- IOC entries (cross-session)
 CREATE TABLE IF NOT EXISTS ioc_entries (
     id SERIAL PRIMARY KEY,
-    investigation_id INTEGER NOT NULL REFERENCES investigations(id),
+    investigation_id INTEGER NOT NULL REFERENCES investigations(id) ON DELETE CASCADE,
     ioc_type VARCHAR(30) NOT NULL,
     value VARCHAR(500) NOT NULL,
     normalized_value VARCHAR(500) NOT NULL,
@@ -232,7 +232,7 @@ CREATE INDEX IF NOT EXISTS idx_ioc_investigation_type ON ioc_entries (investigat
 -- File hashes
 CREATE TABLE IF NOT EXISTS file_hashes (
     id SERIAL PRIMARY KEY,
-    session_id INTEGER NOT NULL REFERENCES sessions(id),
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
     file_path VARCHAR(500) NOT NULL,
     hash_md5 VARCHAR(32),
     hash_sha1 VARCHAR(40),

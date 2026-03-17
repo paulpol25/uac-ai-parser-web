@@ -5,6 +5,9 @@ from typing import Optional
 from pathlib import Path
 import json
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .base import (
     LLMProvider,
@@ -19,8 +22,8 @@ from .gemini_provider import GeminiProvider
 from .claude_provider import ClaudeProvider
 
 
-# Config file location
-CONFIG_PATH = Path(os.environ.get("UAC_CONFIG_PATH", "~/.uac-ai/providers.json")).expanduser()
+# Config file location — stored in the persistent data volume when running in Docker
+CONFIG_PATH = Path(os.environ.get("UAC_CONFIG_PATH", "/app/data/providers.json" if os.path.isdir("/app/data") else "~/.uac-ai/providers.json")).expanduser()
 
 
 class ProviderFactory:
@@ -107,7 +110,36 @@ class ProviderFactory:
                 cls._config = default_config
         else:
             cls._config = default_config
-        
+
+        # Env vars always override saved config for connectivity settings
+        # (critical in Docker where OLLAMA_BASE_URL must point to host.docker.internal)
+        _env_overrides = {
+            "OLLAMA_BASE_URL": [("providers", "ollama", "base_url"),
+                                ("embedding_providers", "ollama", "base_url")],
+            "OPENAI_API_KEY":  [("providers", "openai", "api_key"),
+                                ("embedding_providers", "openai", "api_key")],
+            "ANTHROPIC_API_KEY": [("providers", "claude", "api_key")],
+            "GEMINI_API_KEY":    [("providers", "gemini", "api_key")],
+        }
+        for env_var, paths in _env_overrides.items():
+            val = os.environ.get(env_var)
+            if val:
+                for section, provider, field in paths:
+                    if provider in cls._config.get(section, {}):
+                        cls._config[section][provider][field] = val
+
+        # Auto-correct localhost Ollama URLs inside Docker containers
+        # (localhost inside a container refers to the container, not the host)
+        if os.path.exists("/.dockerenv"):
+            for section in ("providers", "embedding_providers"):
+                ollama_cfg = cls._config.get(section, {}).get("ollama", {})
+                url = ollama_cfg.get("base_url", "")
+                if "://localhost" in url or "://127.0.0.1" in url:
+                    import re
+                    fixed = re.sub(r"://(localhost|127\.0\.0\.1)", "://host.docker.internal", url)
+                    ollama_cfg["base_url"] = fixed
+                    logger.info(f"Auto-corrected Ollama URL to {fixed} (running in Docker)")
+
         return cls._config
     
     @classmethod

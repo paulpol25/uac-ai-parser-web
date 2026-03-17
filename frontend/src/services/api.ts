@@ -1149,17 +1149,19 @@ export async function getGraphPath(sessionId: string, source: string, target: st
   return response.json();
 }
 
-export async function getGraphStats(sessionId: string) {
+export async function getGraphStats(sessionId: string, signal?: AbortSignal) {
   const response = await fetch(`${API_BASE_URL}/analyze/graph/stats?session_id=${sessionId}`, {
     headers: headers(false),
+    signal,
   });
   if (!response.ok) throw new Error("Failed to get graph stats");
   return response.json();
 }
 
-export async function getKillChain(sessionId: string) {
+export async function getKillChain(sessionId: string, signal?: AbortSignal) {
   const response = await fetch(`${API_BASE_URL}/analyze/graph/kill-chain?session_id=${sessionId}`, {
     headers: headers(false),
+    signal,
   });
   if (!response.ok) throw new Error("Failed to get kill chain");
   return response.json();
@@ -1204,4 +1206,150 @@ export async function getTimelineEvents(sessionId: string) {
   });
   if (!response.ok) throw new Error("Failed to get timeline");
   return response.json();
+}
+
+// ===== Agents =====
+
+export async function listAgents(investigationId?: number) {
+  const params = investigationId ? `?investigation_id=${investigationId}` : "";
+  const response = await fetch(`${API_BASE_URL}/agents${params}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to list agents");
+  return response.json();
+}
+
+export async function registerAgent(investigationId: number) {
+  const response = await fetch(`${API_BASE_URL}/agents`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ investigation_id: investigationId }),
+  });
+  if (!response.ok) throw new Error("Failed to register agent");
+  return response.json();
+}
+
+export async function getAgent(agentId: string) {
+  const response = await fetch(`${API_BASE_URL}/agents/${agentId}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to get agent");
+  return response.json();
+}
+
+export async function deleteAgent(agentId: string) {
+  const response = await fetch(`${API_BASE_URL}/agents/${agentId}`, {
+    method: "DELETE",
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to delete agent");
+  return response.json();
+}
+
+export async function dispatchCommand(agentId: string, type: string, payload?: Record<string, unknown>) {
+  const response = await fetch(`${API_BASE_URL}/agents/${agentId}/commands`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ type, payload }),
+  });
+  if (!response.ok) throw new Error("Failed to dispatch command");
+  return response.json();
+}
+
+export async function listCommands(agentId: string, status?: string) {
+  const params = status ? `?status=${status}` : "";
+  const response = await fetch(`${API_BASE_URL}/agents/${agentId}/commands${params}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to list commands");
+  return response.json();
+}
+
+export async function getBootstrapScript(agentId: string) {
+  const response = await fetch(`${API_BASE_URL}/agents/${agentId}/bootstrap`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to get bootstrap script");
+  return response.text();
+}
+
+export async function listAgentEvents(agentId: string, limit = 50) {
+  const response = await fetch(`${API_BASE_URL}/agents/${agentId}/events?limit=${limit}`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to list events");
+  return response.json();
+}
+
+export async function downloadAgentFile(agentId: string, filename: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/agents/${agentId}/files/${encodeURIComponent(filename)}`, {
+    headers: getAuthHeader(),
+  });
+  if (!res.ok) throw new Error("Failed to download file");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ===== Sheetstorm =====
+
+export async function getSheetstormStatus() {
+  const response = await fetch(`${API_BASE_URL}/sheetstorm/status`, {
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to get Sheetstorm status");
+  return response.json();
+}
+
+export async function syncToSheetstorm(investigationId: number) {
+  const response = await fetch(`${API_BASE_URL}/sheetstorm/sync/${investigationId}`, {
+    method: "POST",
+    headers: headers(),
+  });
+  if (!response.ok) throw new Error("Failed to sync to Sheetstorm");
+  return response.json();
+}
+
+// ===== Integration Settings =====
+
+export interface IntegrationSettings {
+  sheetstorm_url: string;
+  sheetstorm_api_token: string;
+  sheetstorm_api_token_set?: boolean;
+  sheetstorm_username: string;
+  sheetstorm_password: string;
+  sheetstorm_password_set?: boolean;
+}
+
+export async function getIntegrationSettings(): Promise<IntegrationSettings> {
+  const res = await fetch(`${API_BASE_URL}/config/settings/integrations`, {
+    headers: getAuthHeader(),
+  });
+  if (!res.ok) throw new Error("Failed to load integration settings");
+  return res.json();
+}
+
+export async function updateIntegrationSettings(
+  data: Partial<IntegrationSettings>
+): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE_URL}/config/settings/integrations`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to save integration settings");
+  return res.json();
+}
+
+export async function testIntegration(): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/config/settings/integrations/test`, {
+    method: "POST",
+    headers: getAuthHeader(),
+  });
+  if (!res.ok) throw new Error("Failed to test integration");
+  return res.json();
 }

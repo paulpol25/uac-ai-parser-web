@@ -138,6 +138,7 @@ export function InteractiveTimeline({ sessionId }: Props) {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [selectedHour, setSelectedHour] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [chartCollapsed, setChartCollapsed] = useState(false);
 
   const { data: stats } = useQuery({
     queryKey: ["timeline-stats", sessionId],
@@ -274,11 +275,15 @@ export function InteractiveTimeline({ sessionId }: Props) {
         ))}
       </div>
 
-      {/* Chart — always visible on top */}
+      {/* Chart — collapsible */}
       {stats && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
+            <CardTitle
+              className="flex items-center gap-2 text-sm cursor-pointer select-none"
+              onClick={() => setChartCollapsed(c => !c)}
+            >
+              {chartCollapsed ? <ChevronRight className="h-4 w-4 text-text-muted" /> : <ChevronDown className="h-4 w-4 text-text-muted" />}
               <BarChart3 className="h-4 w-4 text-brand-primary" />
               Event Activity
               <span className="font-normal text-text-muted">
@@ -286,6 +291,7 @@ export function InteractiveTimeline({ sessionId }: Props) {
               </span>
             </CardTitle>
           </CardHeader>
+          {!chartCollapsed && (
           <CardContent className="space-y-4">
             {stats.by_hour && Object.keys(stats.by_hour).length > 0 && (
               <FrequencyChart data={stats.by_hour} label="Activity by Hour" onBarClick={handleHourClick} selectedKey={selectedHour} />
@@ -311,6 +317,7 @@ export function InteractiveTimeline({ sessionId }: Props) {
               )}
             </div>
           </CardContent>
+          )}
         </Card>
       )}
 

@@ -61,11 +61,11 @@ export function Dashboard() {
     queryFn: () => currentInvestigation ? getInvestigation(currentInvestigation.id) : null,
     enabled: !!currentInvestigation,
     refetchOnMount: "always",  // Ensure fresh session data
-    // Auto-refresh every 10s if any session is still processing
+    // Auto-refresh every 10s while processing, 30s otherwise to catch new sessions
     refetchInterval: (query) => {
       const sessions = query.state.data?.sessions || [];
       const hasProcessing = sessions.some((s: { status: string }) => s.status !== "ready");
-      return hasProcessing ? 10000 : false;
+      return hasProcessing ? 10000 : 30000;
     },
   });
 
@@ -95,8 +95,35 @@ export function Dashboard() {
       .slice(0, 5);
   }, [jobs]);
 
+  // Session deletion - hooks must be before any early returns
+  const [sessionToDelete, setSessionToDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const deleteSessionMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      if (!currentInvestigation) throw new Error("No investigation selected");
+      await deleteSession(currentInvestigation.id, sessionId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["investigation", currentInvestigation?.id] });
+      addToast({
+        type: "success",
+        title: "Session Deleted",
+        message: "The data source has been removed from this investigation.",
+      });
+      setSessionToDelete(null);
+    },
+    onError: (error) => {
+      addToast({
+        type: "error",
+        title: "Delete Failed",
+        message: (error as Error).message || "Failed to delete session",
+      });
+    },
+  });
+
   const parseMutation = useMutation({
     mutationFn: async (file: File) => {
+      const abortController = new AbortController();
       const jobId = addJob({
         filename: file.name,
         progress: 0,
@@ -105,6 +132,7 @@ export function Dashboard() {
         stepDetail: "Starting upload...",
         investigationId: currentInvestigation?.id,
         investigationName: currentInvestigation?.name,
+        abortController,
       });
       
       // Track upload progress locally
@@ -160,7 +188,8 @@ export function Dashboard() {
                 queryClient.invalidateQueries({ queryKey: ["investigation", currentInvestigation?.id] });
               }
             }
-          }
+          },
+          abortController.signal
         );
         
         clearInterval(uploadInterval);
@@ -365,32 +394,6 @@ export function Dashboard() {
     job => job.investigationId === currentInvestigation?.id && 
            (job.status === "uploading" || job.status === "parsing")
   );
-
-  // Session deletion
-  const [sessionToDelete, setSessionToDelete] = useState<{ id: string; name: string } | null>(null);
-  
-  const deleteSessionMutation = useMutation({
-    mutationFn: async (sessionId: string) => {
-      if (!currentInvestigation) throw new Error("No investigation selected");
-      await deleteSession(currentInvestigation.id, sessionId);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["investigation", currentInvestigation?.id] });
-      addToast({
-        type: "success",
-        title: "Session Deleted",
-        message: "The data source has been removed from this investigation.",
-      });
-      setSessionToDelete(null);
-    },
-    onError: (error) => {
-      addToast({
-        type: "error",
-        title: "Delete Failed",
-        message: (error as Error).message || "Failed to delete session",
-      });
-    },
-  });
 
   return (
     <div className="h-full overflow-y-auto p-6 space-y-5">

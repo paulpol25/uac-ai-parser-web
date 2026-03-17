@@ -88,6 +88,8 @@ def _register_all_tools() -> None:
     from uac_ai_mcp.tools import config  # noqa: F401
     from uac_ai_mcp.tools import chats  # noqa: F401
     from uac_ai_mcp.tools import resources  # noqa: F401
+    from uac_ai_mcp.tools import agents  # noqa: F401
+    from uac_ai_mcp.tools import sheetstorm  # noqa: F401
 
 
 _register_all_tools()

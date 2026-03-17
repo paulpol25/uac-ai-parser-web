@@ -4,7 +4,7 @@
  * Shows IOCs extracted from the current investigation with cross-session
  * highlighting and type-based grouping.
  */
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Fingerprint, RefreshCw, Search, AlertTriangle, Globe, Server, Hash, Mail, MapPin, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -40,15 +40,26 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
   const [searchText, setSearchText] = useState("");
   const [typeFilter, setTypeFilter] = useState<string | "all">("all");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [extracted, setExtracted] = useState(false);
+
+  // Reset extracted flag and clear stale cache when sessions change
+  const sessionKey = sessionIds.join(",");
+  useEffect(() => {
+    setExtracted(false);
+    queryClient.removeQueries({ queryKey: ["ioc-summary", investigationId] });
+    queryClient.removeQueries({ queryKey: ["ioc-correlation", investigationId] });
+  }, [sessionKey, investigationId, queryClient]);
 
   const { data: summary } = useQuery({
     queryKey: ["ioc-summary", investigationId],
     queryFn: () => getIOCSummary(investigationId),
+    enabled: extracted,
   });
 
   const { data: correlation, isLoading } = useQuery({
     queryKey: ["ioc-correlation", investigationId],
     queryFn: () => getIOCCorrelation(investigationId),
+    enabled: extracted,
   });
 
   const { data: searchResults } = useQuery({
@@ -60,6 +71,7 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
   const extractMutation = useMutation({
     mutationFn: (sessionId: string) => iocExtract(sessionId),
     onSuccess: () => {
+      setExtracted(true);
       queryClient.invalidateQueries({ queryKey: ["ioc-summary", investigationId] });
       queryClient.invalidateQueries({ queryKey: ["ioc-correlation", investigationId] });
     },

@@ -57,7 +57,7 @@ function ChunkCard({ chunk, index }: { chunk: ChunkPreview; index: number }) {
               {Math.round(chunk.score * 100)}% match
             </span>
           </div>
-          <p className="text-sm text-text-secondary mt-1 truncate font-mono">
+          <p className="text-sm text-text-secondary mt-1 truncate font-mono" title={chunk.source}>
             {chunk.source}
           </p>
         </div>

@@ -28,6 +28,7 @@ from collections import OrderedDict
 import hashlib
 import re
 import logging
+import gevent
 import tiktoken
 import chromadb
 from chromadb.config import Settings
@@ -43,15 +44,28 @@ try:
 except ImportError:
     HAS_BM25 = False
 
-# Cross-encoder for reranking
-try:
-    from sentence_transformers import CrossEncoder
-    HAS_CROSS_ENCODER = True
-except ImportError:
-    HAS_CROSS_ENCODER = False
+# Cross-encoder for reranking (lazy-loaded to avoid torch import at startup)
+HAS_CROSS_ENCODER = False
+_cross_encoder_class = None
+
+def _get_cross_encoder_class():
+    global HAS_CROSS_ENCODER, _cross_encoder_class
+    if _cross_encoder_class is None:
+        try:
+            from sentence_transformers import CrossEncoder
+            _cross_encoder_class = CrossEncoder
+            HAS_CROSS_ENCODER = True
+        except ImportError:
+            HAS_CROSS_ENCODER = False
+    return _cross_encoder_class
 
 from app.models import db, Chunk, Session, Entity
 from app.services.entity_extractor import get_entity_extractor
+
+
+def _strip_nul(s: str) -> str:
+    """Remove NUL bytes that PostgreSQL TEXT columns reject."""
+    return s.replace('\x00', '') if s else s
 
 
 # Forensic domain query expansion dictionary
@@ -267,9 +281,10 @@ class TieredRAGService:
     
     def _get_cross_encoder(self):
         """Lazy load cross-encoder model for reranking."""
-        if self._cross_encoder is None and HAS_CROSS_ENCODER:
-            # ms-marco-MiniLM-L-6-v2 is fast and accurate for reranking
-            self._cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        if self._cross_encoder is None:
+            CE = _get_cross_encoder_class()
+            if CE is not None:
+                self._cross_encoder = CE('cross-encoder/ms-marco-MiniLM-L-6-v2')
         return self._cross_encoder
     
     def _rerank_with_cross_encoder(self, query: str, chunks: list[dict], top_k: int = 10) -> list[dict]:
@@ -543,16 +558,25 @@ class TieredRAGService:
         total_files = len([f for f in all_files if f.is_file()])
         files_done = 0
         
+        # Deferred entity list — entities reference chunks via FK, so chunks
+        # must be flushed to the DB before entities are added to the session.
+        pending_entities: list[Entity] = []
+        
         # Walk all files in extract directory
         for file_path in all_files:
             if not file_path.is_file():
                 continue
             
             files_done += 1
-            # Report progress every 100 files (35-75% range for chunking phase)
-            if files_done % 100 == 0:
+            # Report progress every 50 files (35-75% range for chunking phase)
+            if files_done % 50 == 0:
                 pct = 35 + int((files_done / max(total_files, 1)) * 40)
                 report("chunk", min(pct, 75), f"Processing file {files_done}/{total_files}...")
+            
+            # Yield to the gevent event loop every 20 files so SSE keepalives
+            # and other requests are not starved by CPU-bound processing.
+            if files_done % 20 == 0:
+                gevent.sleep(0)
             
             # Skip very large files (>5MB) - check size FIRST (cheap metadata operation)
             try:
@@ -575,13 +599,16 @@ class TieredRAGService:
                 # Read file content
                 with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                     content = f.read()
-                
+
+                # Strip null bytes — PostgreSQL TEXT columns reject \x00
+                content = _strip_nul(content)
+
                 if not content.strip():
                     stats["files_skipped"] += 1
                     continue
                 
-                # Get relative path for metadata
-                rel_path = str(file_path.relative_to(extract_dir))
+                # Get relative path for metadata (also strip NUL)
+                rel_path = _strip_nul(str(file_path.relative_to(extract_dir)))
                 
                 # Classify for pre-filtering
                 source_type = self._classify_source_type(rel_path)
@@ -601,7 +628,7 @@ class TieredRAGService:
                 
                 for chunk_data in chunks:
                     chunk_id = chunk_data["chunk_id"]
-                    chunk_content = chunk_data["content"]
+                    chunk_content = _strip_nul(chunk_data["content"])
                     
                     # NOTE: Skip the per-chunk database check - it's a major performance killer
                     # chunk_ids are unique per session by design (they include session_id in hash)
@@ -626,18 +653,18 @@ class TieredRAGService:
                     db.session.add(chunk)
                     
                     # Extract entities from chunk (fast regex, no LLM)
+                    # Defer adding to session — chunks must be flushed first.
                     extracted = entity_extractor.extract_entities(chunk_content, chunk_id)
                     for ent in extracted:
-                        entity = Entity(
+                        pending_entities.append(Entity(
                             session_id=session.id,
                             chunk_id=chunk_id,
                             entity_type=ent.entity_type,
-                            entity_value=ent.value,
-                            normalized_value=ent.normalized_value,
-                            context_snippet=ent.context_snippet,
+                            entity_value=_strip_nul(ent.value),
+                            normalized_value=_strip_nul(ent.normalized_value),
+                            context_snippet=_strip_nul(ent.context_snippet),
                             occurrence_count=1
-                        )
-                        db.session.add(entity)
+                        ))
                         stats["entities_extracted"] = stats.get("entities_extracted", 0) + 1
                     
                     stats["chunks_created"] += 1
@@ -649,128 +676,157 @@ class TieredRAGService:
                 
                 stats["files_processed"] += 1
                 
-                # Flush to DB every 1000 chunks to avoid memory buildup
-                if stats["chunks_created"] % 1000 == 0:
-                    db.session.flush()
+                # Batch flush chunks, then their entities, every 500 chunks.
+                # Chunks must hit the DB before entities to satisfy the FK.
+                if stats["chunks_created"] % 500 == 0:
+                    db.session.flush()          # flush pending Chunk rows
+                    db.session.bulk_save_objects(pending_entities)
+                    pending_entities.clear()
+                    db.session.flush()           # flush Entity rows
                 
             except Exception as e:
+                # Rollback so the session isn't poisoned for subsequent files
+                db.session.rollback()
+                pending_entities.clear()
+                logger.warning(f"Skipping file {file_path}: {e}")
                 stats["files_skipped"] += 1
                 continue
+        
+        # Flush remaining chunks, then remaining entities, before commit
+        db.session.flush()
+        if pending_entities:
+            db.session.bulk_save_objects(pending_entities)
+            pending_entities.clear()
         
         # Commit Tier 1 chunks - session is now searchable!
         report("commit", 75, "Saving chunks to database...")
         session.status = "searchable"  # Timeline and search now work
         db.session.commit()
         
-        report("searchable", 76, "Timeline and search ready! Starting AI embeddings...")
+        report("searchable", 76, "Timeline and search ready! Starting AI embeddings in background...")
         
-        # Now generate embeddings for Tier 2 (batch for efficiency)
-        # Only add newly created chunks (not existing ones)
-        report("embed", 77, "Loading chunks for embedding...")
-        new_chunks = Chunk.query.filter_by(session_id=session.id).all()
+        # Run embeddings + graph building on a REAL native OS thread.
+        # gevent's monkey.patch_all() turns threading.Thread into greenlets
+        # which share the event loop. CPU-bound work like
+        # SentenceTransformer.encode() and ChromaDB upserts would block the
+        # entire server.  gevent.threadpool gives us actual OS threads.
+        from gevent.threadpool import ThreadPoolExecutor as _NativePool
+        from flask import current_app
+        app = current_app._get_current_object()
+        session_id_for_bg = session.session_id
+        session_db_id = session.id
+        rag_service_ref = self
         
-        if new_chunks:
-            # Get fast embedding service (GPU-accelerated)
-            embedding_service = get_embedding_service()
-            use_fast_embeddings = embedding_service.is_available
-            
-            total_chunks = len(new_chunks)
-            
-            if use_fast_embeddings:
-                # Generate ALL embeddings at once (maximize GPU utilization)
-                logger.info(f"🚀 Generating {total_chunks} embeddings with GPU...")
-                report("embed", 78, f"Generating {total_chunks} embeddings on GPU...")
-                
-                # Extract all documents
-                all_documents = [c.content for c in new_chunks]
-                
-                # Generate all embeddings in one call (GPU batch_size handled internally)
-                # Use batch_size=128 for good GPU throughput with bge-small
-                all_embeddings = embedding_service.embed_documents(
-                    all_documents, 
-                    batch_size=128,
-                    show_progress=False
-                )
-                
-                report("embed", 88, f"Embeddings complete! Storing in vector index...")
-                
-                # Now insert into ChromaDB in batches (ChromaDB write performance)
-                UPSERT_BATCH = 500  # Larger batches for ChromaDB inserts
-                total_batches = (total_chunks + UPSERT_BATCH - 1) // UPSERT_BATCH
-                
-                for i in range(0, total_chunks, UPSERT_BATCH):
-                    batch_num = i // UPSERT_BATCH + 1
-                    end_idx = min(i + UPSERT_BATCH, total_chunks)
-                    pct = 88 + int((end_idx / total_chunks) * 7)
-                    report("embed", min(pct, 95), f"Storing batch {batch_num}/{total_batches}...")
+        def _background_embed_and_graph():
+            """Generate embeddings and build graph in background."""
+            try:
+                with app.app_context():
+                    bg_session = Session.query.get(session_db_id)
+                    if not bg_session:
+                        return
                     
-                    batch_chunks = new_chunks[i:end_idx]
-                    batch_embeddings = all_embeddings[i:end_idx]
-                    batch_docs = all_documents[i:end_idx]
+                    # Load chunks for embedding
+                    new_chunks = Chunk.query.filter_by(session_id=session_db_id).all()
                     
+                    if new_chunks:
+                        embedding_service = get_embedding_service()
+                        use_fast_embeddings = embedding_service.is_available
+                        total_chunks = len(new_chunks)
+                        
+                        if use_fast_embeddings:
+                            logger.info(f"🚀 [BG] Generating {total_chunks} embeddings with GPU...")
+                            all_documents = [c.content for c in new_chunks]
+                            all_embeddings = embedding_service.embed_documents(
+                                all_documents, batch_size=128, show_progress=False
+                            )
+                            
+                            UPSERT_BATCH = 500
+                            for i in range(0, total_chunks, UPSERT_BATCH):
+                                end_idx = min(i + UPSERT_BATCH, total_chunks)
+                                batch_chunks = new_chunks[i:end_idx]
+                                batch_embeddings = all_embeddings[i:end_idx]
+                                batch_docs = all_documents[i:end_idx]
+                                try:
+                                    coll_name = f"session_{session_id_for_bg.replace('-', '_')}"
+                                    collection = rag_service_ref.chroma.get_or_create_collection(
+                                        name=coll_name, metadata={"session_id": session_id_for_bg}
+                                    )
+                                    collection.upsert(
+                                        ids=[c.chunk_id for c in batch_chunks],
+                                        embeddings=batch_embeddings,
+                                        documents=batch_docs,
+                                        metadatas=[{
+                                            "source_file": c.source_file,
+                                            "source_type": c.source_type,
+                                            "artifact_category": c.artifact_category,
+                                            "importance_score": c.importance_score
+                                        } for c in batch_chunks]
+                                    )
+                                except Exception:
+                                    import traceback
+                                    traceback.print_exc()
+                        else:
+                            logger.warning("⚠️ [BG] Using ChromaDB default embeddings (slower)")
+                            BATCH_SIZE = 250
+                            for i in range(0, total_chunks, BATCH_SIZE):
+                                batch = new_chunks[i:i + BATCH_SIZE]
+                                try:
+                                    coll_name = f"session_{session_id_for_bg.replace('-', '_')}"
+                                    collection = rag_service_ref.chroma.get_or_create_collection(
+                                        name=coll_name, metadata={"session_id": session_id_for_bg}
+                                    )
+                                    collection.upsert(
+                                        ids=[c.chunk_id for c in batch],
+                                        documents=[c.content for c in batch],
+                                        metadatas=[{
+                                            "source_file": c.source_file,
+                                            "source_type": c.source_type,
+                                            "artifact_category": c.artifact_category,
+                                            "importance_score": c.importance_score
+                                        } for c in batch]
+                                    )
+                                except Exception:
+                                    import traceback
+                                    traceback.print_exc()
+                    
+                    # Build entity relationship graph
                     try:
-                        collection.upsert(
-                            ids=[c.chunk_id for c in batch_chunks],
-                            embeddings=batch_embeddings,
-                            documents=batch_docs,
-                            metadatas=[{
-                                "source_file": c.source_file,
-                                "source_type": c.source_type,
-                                "artifact_category": c.artifact_category,
-                                "importance_score": c.importance_score
-                            } for c in batch_chunks]
-                        )
-                    except Exception as e:
+                        from app.services.graph_rag_service import get_graph_rag_service
+                        graph_service = get_graph_rag_service()
+                        graph_service.build_relationships_for_session(session_id_for_bg)
+                    except Exception:
                         import traceback
                         traceback.print_exc()
-                        report("embed", pct, f"Warning: Batch {batch_num} storage failed, continuing...")
-            else:
-                # Fallback: ChromaDB generates embeddings (slower path)
-                logger.warning("⚠️ Using ChromaDB default embeddings (slower)")
-                BATCH_SIZE = 250
-                total_batches = (total_chunks + BATCH_SIZE - 1) // BATCH_SIZE
-                report("embed", 78, f"Generating embeddings for {total_chunks} chunks ({total_batches} batches)...")
-                
-                for i in range(0, total_chunks, BATCH_SIZE):
-                    batch_num = i // BATCH_SIZE + 1
-                    chunks_done = min(i + BATCH_SIZE, total_chunks)
-                    pct = 78 + int((chunks_done / total_chunks) * 17)
-                    report("embed", min(pct, 95), f"Embedding chunks {chunks_done}/{total_chunks}...")
                     
-                    batch = new_chunks[i:i + BATCH_SIZE]
-                    try:
-                        collection.upsert(
-                            ids=[c.chunk_id for c in batch],
-                            documents=[c.content for c in batch],
-                            metadatas=[{
-                                "source_file": c.source_file,
-                                "source_type": c.source_type,
-                                "artifact_category": c.artifact_category,
-                                "importance_score": c.importance_score
-                            } for c in batch]
-                        )
-                    except Exception as e:
-                        import traceback
-                        traceback.print_exc()
-                        report("embed", pct, f"Warning: Embedding batch {batch_num} failed, continuing...")
+                    # Mark session as fully ready
+                    bg_session.status = "ready"
+                    db.session.commit()
+                    logger.info(f"✅ [BG] Session {session_id_for_bg} embeddings + graph complete")
+                    
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                try:
+                    with app.app_context():
+                        bg_session = Session.query.get(session_db_id)
+                        if bg_session and bg_session.status != "ready":
+                            # Keep as searchable, don't mark failed - data is still usable
+                            logger.error(f"❌ [BG] Embedding failed for {session_id_for_bg}, keeping searchable")
+                except Exception:
+                    pass
         
-        # Build entity relationship graph (Phase 5: Graph RAG)
-        report("graph", 96, "Building entity relationship graph...")
-        try:
-            from app.services.graph_rag_service import get_graph_rag_service
-            graph_service = get_graph_rag_service()
-            graph_stats = graph_service.build_relationships_for_session(session.session_id)
-            stats["relationships_created"] = graph_stats.get("relationships_created", 0)
-            report("graph", 98, f"Created {stats['relationships_created']} entity relationships")
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            report("graph", 98, "Warning: Graph building failed, continuing...")
-            stats["relationships_created"] = 0
+        _bg_pool = _NativePool(max_workers=1)
+        _bg_pool.submit(_background_embed_and_graph)
+        # Pool is intentionally not shut down here — the daemon thread
+        # will finish on its own and the pool will be GC'd.
         
-        # Update session stats
+        # Return stats immediately - session is searchable
+        report("embed", 80, "Embeddings running in background...")
+        report("finalize", 95, "Session ready for queries!")
+        report("complete", 100, "Complete!")
+        
+        # Update session stats before returning
         session.total_chunks = stats["chunks_created"]
-        session.status = "ready"
         db.session.commit()
         
         return stats

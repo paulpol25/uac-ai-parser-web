@@ -6,7 +6,7 @@ from werkzeug.utils import secure_filename
 import uuid
 import json
 import queue
-import threading
+from gevent.threadpool import ThreadPoolExecutor as _NativeExecutor
 from pathlib import Path
 from datetime import datetime, date
 
@@ -256,9 +256,12 @@ def upload_and_parse_stream():
     
     def generate():
         """Generate SSE stream."""
-        # Start parsing in background thread
-        thread = threading.Thread(target=parse_worker)
-        thread.start()
+        # Run parsing on a REAL OS thread (not a gevent greenlet) so that
+        # CPU-bound work (tokenisation, regex entity extraction) does not
+        # starve the gevent event loop and block SSE keepalives / other
+        # HTTP requests.
+        pool = _NativeExecutor(max_workers=1)
+        future = pool.submit(parse_worker)
         
         # Stream progress updates
         while True:
@@ -272,8 +275,9 @@ def upload_and_parse_stream():
                 # Send keepalive
                 yield f"data: {json_dumps({'type': 'keepalive'})}\n\n"
         
-        # Wait for thread to finish
-        thread.join()
+        # Wait for the native thread to finish
+        future.result()
+        pool.shutdown(wait=False)
         
         # Send final result or error
         if result_holder["error"]:

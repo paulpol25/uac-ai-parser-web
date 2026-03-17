@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { X, Upload, CheckCircle2, AlertCircle, Loader2, ChevronDown, ChevronUp, FileArchive, RotateCcw } from "lucide-react";
+import { X, Upload, CheckCircle2, AlertCircle, Loader2, ChevronDown, ChevronUp, FileArchive, RotateCcw, Ban } from "lucide-react";
 import { useUploadStore, type UploadJob, STEP_LABELS } from "@/stores/uploadStore";
 import { useNavigate } from "react-router-dom";
 
 export function GlobalUploadProgress() {
   const navigate = useNavigate();
-  const { jobs, removeJob, clearCompleted } = useUploadStore();
+  const { jobs, removeJob, cancelJob, clearCompleted } = useUploadStore();
   const [isExpanded, setIsExpanded] = useState(true);
   const [isVisible, setIsVisible] = useState(false);
 
@@ -59,7 +59,7 @@ export function GlobalUploadProgress() {
   };
 
   return (
-    <div className="fixed top-20 right-4 z-50 w-96 bg-bg-surface border border-border-default rounded-lg shadow-lg overflow-hidden animate-slide-in-right">
+    <div className="fixed bottom-4 right-4 z-50 w-96 bg-bg-surface border border-border-default rounded-lg shadow-lg overflow-hidden animate-slide-in-right">
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 bg-bg-elevated border-b border-border-subtle cursor-pointer"
@@ -128,6 +128,18 @@ export function GlobalUploadProgress() {
                         className="text-text-muted hover:text-text-secondary shrink-0"
                       >
                         <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {(job.status === "uploading" || job.status === "parsing") && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          cancelJob(job.id);
+                        }}
+                        className="text-text-muted hover:text-error shrink-0"
+                        title="Cancel upload"
+                      >
+                        <Ban className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>

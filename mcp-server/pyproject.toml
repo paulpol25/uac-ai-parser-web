@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "uac-ai-mcp"
 version = "0.1.0"
 description = "MCP (Model Context Protocol) server for UAC AI Parser forensic analysis platform"
-readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [

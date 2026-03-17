@@ -474,8 +474,8 @@ class GraphRAGService:
         if not session:
             return {"nodes": {}, "edges": defaultdict(list), "reverse_edges": defaultdict(list)}
         
-        # Load all entities
-        entities = Entity.query.filter_by(session_id=session.id).all()
+        # Load entities (cap at 2000 to prevent memory/time issues)
+        entities = Entity.query.filter_by(session_id=session.id).limit(2000).all()
         nodes = {
             e.id: {
                 "id": e.id,
@@ -487,12 +487,16 @@ class GraphRAGService:
             for e in entities
         }
         
-        # Load all relationships
-        relationships = EntityRelationship.query.filter_by(session_id=session.id).all()
+        node_ids = set(nodes.keys())
+        
+        # Load relationships (cap at 5000 to prevent memory/time issues)
+        relationships = EntityRelationship.query.filter_by(session_id=session.id).limit(5000).all()
         edges = defaultdict(list)
         reverse_edges = defaultdict(list)
         
         for rel in relationships:
+            if rel.source_entity_id not in node_ids or rel.target_entity_id not in node_ids:
+                continue
             edge_info = {
                 "target_id": rel.target_entity_id,
                 "relationship_type": rel.relationship_type,

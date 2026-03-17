@@ -210,9 +210,13 @@ __marimo__/
 # Application data directory
 .uac-ai/
 
+# Testing files
+intrusion-simulation.md
+
 # Uploaded files and extracts
 uploads/
 backend/uploads/
+agent/bin
 
 # ChromaDB data
 chroma_data/
@@ -243,6 +247,9 @@ config.local.yaml
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# MCPs
+.playwright-mcp/
 
 # Frontend build
 frontend/dist/

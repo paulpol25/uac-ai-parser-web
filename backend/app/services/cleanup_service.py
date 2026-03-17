@@ -174,11 +174,16 @@ class CleanupService:
     # ── Internal helpers ───────────────────────────────────────
 
     def _cleanup_expired_sessions(self, retention_days: int) -> int:
-        """Delete sessions older than retention period."""
+        """Delete sessions older than retention period. Skips active investigations."""
         cutoff = datetime.utcnow() - timedelta(days=retention_days)
         expired = Session.query.filter(Session.parsed_at < cutoff).all()
         count = 0
         for session in expired:
+            # Never auto-delete sessions from active investigations
+            investigation = Investigation.query.get(session.investigation_id)
+            if investigation and investigation.status == "active":
+                continue
+
             # Check per-investigation policy override
             policy = CleanupPolicy.query.filter_by(
                 investigation_id=session.investigation_id

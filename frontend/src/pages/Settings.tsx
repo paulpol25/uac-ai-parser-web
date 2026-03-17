@@ -20,6 +20,7 @@ import {
   Save,
   Cpu,
   Info,
+  Link2,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/Loader";
 import { Input } from "@/components/ui/Input";
@@ -35,8 +36,12 @@ import {
   getProcessingSettings,
   updateProcessingSettings,
   getLocalEmbeddingModels,
+  getIntegrationSettings,
+  updateIntegrationSettings,
+  testIntegration,
   type ProviderInfo,
   type ProcessingSettings,
+  type IntegrationSettings,
   API_BASE_URL,
 } from "@/services/api";
 import { getAuthHeader } from "@/stores/authStore";
@@ -48,7 +53,7 @@ interface ModelOption {
   recommended?: boolean;
 }
 
-type SettingsTab = "providers" | "embeddings" | "advanced" | "storage" | "about";
+type SettingsTab = "providers" | "embeddings" | "advanced" | "storage" | "integrations" | "about";
 
 // Provider metadata with icon, description, and available models
 const PROVIDER_INFO: Record<string, { 
@@ -116,6 +121,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Brain }[] = [
   { id: "embeddings", label: "Embeddings", icon: Cpu },
   { id: "advanced", label: "Advanced", icon: HardDrive },
   { id: "storage", label: "Storage", icon: Database },
+  { id: "integrations", label: "Integrations", icon: Link2 },
   { id: "about", label: "About", icon: Info },
 ];
 
@@ -170,7 +176,7 @@ function StorageTab() {
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            <span className="text-xs text-text-muted">Delete expired data?</span>
+            <span className="text-xs text-text-muted">Delete expired data? (Active cases are protected)</span>
             <button
               className="px-3 py-1.5 text-xs font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors disabled:opacity-50"
               onClick={() => cleanupMutation.mutate()}
@@ -239,6 +245,218 @@ function StorageTab() {
             )}
           </>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function IntegrationsTab() {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState({
+    sheetstorm_url: "",
+    sheetstorm_api_token: "",
+    sheetstorm_username: "",
+    sheetstorm_password: "",
+  });
+  const [showToken, setShowToken] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  const { data, isLoading } = useQuery<IntegrationSettings>({
+    queryKey: ["integration-settings"],
+    queryFn: getIntegrationSettings,
+  });
+
+  // Seed form when data loads
+  useState(() => {
+    if (data) {
+      setForm({
+        sheetstorm_url: data.sheetstorm_url || "",
+        sheetstorm_api_token: data.sheetstorm_api_token_set ? "" : "",
+        sheetstorm_username: data.sheetstorm_username || "",
+        sheetstorm_password: data.sheetstorm_password_set ? "" : "",
+      });
+    }
+  });
+
+  // Watch for data changes
+  const [loaded, setLoaded] = useState(false);
+  if (data && !loaded) {
+    form.sheetstorm_url = data.sheetstorm_url || "";
+    form.sheetstorm_username = data.sheetstorm_username || "";
+    setLoaded(true);
+  }
+
+  const update = (key: keyof typeof form, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const payload: Record<string, string> = {};
+      payload.sheetstorm_url = form.sheetstorm_url;
+      payload.sheetstorm_username = form.sheetstorm_username;
+      // Only send secrets if user typed something new
+      if (form.sheetstorm_api_token) payload.sheetstorm_api_token = form.sheetstorm_api_token;
+      if (form.sheetstorm_password) payload.sheetstorm_password = form.sheetstorm_password;
+      return updateIntegrationSettings(payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["integration-settings"] });
+      setDirty(false);
+      setLoaded(false);
+    },
+  });
+
+  const testMutation = useMutation({ mutationFn: testIntegration });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Spinner className="w-6 h-6 text-brand-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Sheetstorm */}
+      <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-text-primary">Sheetstorm</h2>
+            <p className="text-xs text-text-muted mt-0.5">
+              Incident response platform integration for case management and IOC tracking
+            </p>
+          </div>
+          {data?.sheetstorm_url && (
+            <span className="text-xs px-2 py-0.5 bg-success/10 text-success rounded">Configured</span>
+          )}
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* URL */}
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1">
+              Sheetstorm API URL
+            </label>
+            <Input
+              type="url"
+              placeholder="https://sheetstorm.example.com"
+              value={form.sheetstorm_url}
+              onChange={(e) => update("sheetstorm_url", e.target.value)}
+            />
+            <p className="text-xs text-text-muted mt-1">Base URL of your Sheetstorm instance</p>
+          </div>
+
+          {/* Auth: token OR credentials */}
+          <div className="pt-3 border-t border-border-subtle">
+            <p className="text-sm font-medium text-text-primary mb-3">
+              Authentication <span className="text-xs text-text-muted font-normal">(token or username/password)</span>
+            </p>
+
+            {/* API Token */}
+            <div className="mb-4">
+              <label className="block text-sm text-text-secondary mb-1">API Token</label>
+              <div className="relative">
+                <Input
+                  type={showToken ? "text" : "password"}
+                  placeholder={data?.sheetstorm_api_token_set ? "••••••••  (saved)" : "Enter API token"}
+                  value={form.sheetstorm_api_token}
+                  onChange={(e) => update("sheetstorm_api_token", e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+                >
+                  {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-xs text-text-muted mt-1">Preferred — bypasses username/password login</p>
+            </div>
+
+            <div className="text-xs text-text-muted text-center mb-3">— or —</div>
+
+            {/* Username */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">Username</label>
+                <Input
+                  type="text"
+                  placeholder="admin"
+                  value={form.sheetstorm_username}
+                  onChange={(e) => update("sheetstorm_username", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">Password</label>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    placeholder={data?.sheetstorm_password_set ? "••••••••  (saved)" : "Enter password"}
+                    value={form.sheetstorm_password}
+                    onChange={(e) => update("sheetstorm_password", e.target.value)}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-3 pt-4 border-t border-border-subtle">
+            <button
+              onClick={() => saveMutation.mutate()}
+              disabled={!dirty || saveMutation.isPending}
+              className="px-4 py-2 rounded-lg bg-brand-primary text-white font-medium text-sm hover:bg-brand-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {saveMutation.isPending ? (
+                <Spinner className="w-4 h-4" />
+              ) : saveMutation.isSuccess ? (
+                <Check className="w-4 h-4" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              {saveMutation.isSuccess ? "Saved" : "Save"}
+            </button>
+
+            <button
+              onClick={() => testMutation.mutate()}
+              disabled={testMutation.isPending || !form.sheetstorm_url}
+              className="px-4 py-2 rounded-lg border border-border-default text-text-secondary font-medium text-sm hover:bg-bg-surface disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {testMutation.isPending ? (
+                <Spinner className="w-4 h-4" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              Test Connection
+            </button>
+
+            {testMutation.isSuccess && (
+              <span
+                className={`text-sm ${
+                  testMutation.data?.success ? "text-success" : "text-error"
+                }`}
+              >
+                {testMutation.data?.message}
+              </span>
+            )}
+            {testMutation.isError && (
+              <span className="text-sm text-error">Connection test failed</span>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -386,7 +604,7 @@ export function Settings() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex gap-1 p-1 bg-bg-elevated rounded-xl">
+        <div className="flex gap-1 p-1 bg-bg-elevated rounded-xl overflow-x-auto">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -394,13 +612,13 @@ export function Settings() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                className={`flex-shrink-0 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
                   isActive
                     ? "bg-bg-surface text-text-primary shadow-sm"
                     : "text-text-muted hover:text-text-secondary hover:bg-bg-surface/50"
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-4 h-4 shrink-0" />
                 <span className="hidden sm:inline">{tab.label}</span>
               </button>
             );
@@ -982,6 +1200,9 @@ export function Settings() {
 
         {/* Storage Tab */}
         {activeTab === "storage" && <StorageTab />}
+
+        {/* Integrations Tab */}
+        {activeTab === "integrations" && <IntegrationsTab />}
 
         {/* About Tab */}
         {activeTab === "about" && (

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ---------------------------------------------------------------------------
   # PostgreSQL Database
@@ -64,7 +62,7 @@ services:
       - FLASK_DEBUG=false
       - CORS_ORIGINS=*
       # LLM
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1}
       # Auth
       - AUTH_PROVIDER=${AUTH_PROVIDER:-local}
@@ -83,10 +81,14 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - AGENT_BINARIES_DIR=/app/agent/bin
+      # Gunicorn workers (separate OS processes for true parallelism)
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
     ports:
       - "0.0.0.0:5001:5000"
     volumes:
       - uac-ai-data:/app/data
+      - ./agent/bin:/app/agent/bin:ro
     depends_on:
       database:
         condition: service_healthy

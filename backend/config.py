@@ -44,6 +44,7 @@ class BaseConfig:
     # Upload settings
     MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2GB max upload
     UPLOAD_FOLDER = Path(os.environ.get("UPLOAD_FOLDER", "~/.uac-ai/uploads")).expanduser()
+    AGENT_BINARIES_DIR = Path(os.environ.get("AGENT_BINARIES_DIR", Path(__file__).parent.parent / "agent" / "bin"))
     ALLOWED_EXTENSIONS = {"tar.gz", "tgz", "zip"}
     
     # Ollama (local LLM)
@@ -72,6 +73,15 @@ class BaseConfig:
     DATA_RETENTION_DAYS = int(os.environ.get("DATA_RETENTION_DAYS", "90"))  # 0 = never auto-delete
     CLEANUP_EXTRACTED_AFTER_PARSE = os.environ.get("CLEANUP_EXTRACTED_AFTER_PARSE", "true").lower() == "true"
     MAX_STORAGE_GB = float(os.environ.get("MAX_STORAGE_GB", "50"))
+    
+    # Sheetstorm integration (optional — disabled when URL is empty)
+    SHEETSTORM_API_URL = os.environ.get("SHEETSTORM_API_URL", "")
+    SHEETSTORM_USERNAME = os.environ.get("SHEETSTORM_USERNAME", "")
+    SHEETSTORM_PASSWORD = os.environ.get("SHEETSTORM_PASSWORD", "")
+    SHEETSTORM_API_TOKEN = os.environ.get("SHEETSTORM_API_TOKEN", "")
+    
+    # Agent settings (port must match PORT env / run.py default)
+    BASE_URL = os.environ.get("BASE_URL", f"http://localhost:{os.environ.get('PORT', '5001')}")
 
 
 class DevelopmentConfig(BaseConfig):

@@ -1294,7 +1294,11 @@ PARAMS: {{"answer": "Your complete answer here"}}
                 response = self.provider.generate(prompt)
                 agent_text = response.content
             except Exception as e:
-                yield f"Error communicating with LLM: {str(e)}\n"
+                error_msg = str(e)
+                if "429" in error_msg or "rate" in error_msg.lower() or "quota" in error_msg.lower():
+                    yield "⚠️ LLM rate limit exceeded. Please wait a minute and try again.\n"
+                else:
+                    yield f"Error communicating with LLM: {error_msg}\n"
                 break
             
             # Parse response
@@ -1364,8 +1368,12 @@ Answer:"""
                     response = self.provider.generate(summary_prompt)
                     yield response.content
                 except Exception as e:
-                    yield f"Based on the investigation, {len(history)} searches were performed but a final summary could not be generated. "
-                    yield "Please review the investigation steps above for details, or try rephrasing your question."
+                    error_msg = str(e)
+                    if "429" in error_msg or "rate" in error_msg.lower() or "quota" in error_msg.lower():
+                        yield "⚠️ LLM rate limit exceeded. Please wait a minute and try again."
+                    else:
+                        yield f"Based on the investigation, {len(tool_history)} searches were performed but a final summary could not be generated. "
+                        yield "Please review the investigation steps above for details, or try rephrasing your question."
             else:
                 yield "No investigation results were gathered. Please try a different question."
         

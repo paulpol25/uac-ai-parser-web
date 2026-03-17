@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   Crosshair,
+  Monitor,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { useQuery } from "@tanstack/react-query";
@@ -27,6 +28,7 @@ import { GlobalUploadProgress } from "@/components/features/GlobalUploadProgress
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/investigations", icon: FolderOpen, label: "Cases" },
+  { to: "/agents", icon: Monitor, label: "Agents" },
   { to: "/query", icon: Sparkles, label: "AI Query" },
   { to: "/timeline", icon: Clock, label: "Timeline" },
   { to: "/search", icon: Search, label: "Search" },

@@ -23,6 +23,7 @@ import { cn } from "@/utils/cn";
 import { Spinner } from "@/components/ui/Loader";
 import { Input } from "@/components/ui/Input";
 import { ScrollToTop } from "@/components/ui/ScrollToTop";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { InteractiveTimeline } from "@/components/features/InteractiveTimeline";
 import { useInvestigationStore } from "@/stores/investigationStore";
 import { useSessionStore } from "@/stores/sessionStore";
@@ -121,15 +122,15 @@ function EventRow({
         </td>
         
         {/* Description */}
-        <td className="px-4 py-3 max-w-md">
-          <p className={`text-sm text-text-primary ${isExpanded ? '' : 'truncate'}`}>
+        <td className="px-4 py-3 max-w-md overflow-hidden">
+          <p className={`text-sm text-text-primary ${isExpanded ? '' : 'truncate'}`} title={event.description}>
             {highlightText(event.description, searchTerm)}
           </p>
         </td>
         
         {/* Source Path */}
-        <td className="px-4 py-3 max-w-xs">
-          <p className="text-xs text-text-muted font-mono truncate">
+        <td className="px-4 py-3 max-w-xs overflow-hidden">
+          <p className="text-xs text-text-muted font-mono truncate" title={event.path}>
             {highlightText(event.path, searchTerm)}
           </p>
         </td>
@@ -337,7 +338,7 @@ export function Timeline() {
               Upload a UAC output file to view the timeline.
             </p>
           </div>
-          <button className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => navigate("/")}>
+          <button className="flex items-center gap-2 mx-auto px-5 py-2.5 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => navigate("/")}>
             Go to Dashboard
           </button>
         </div>
@@ -374,18 +375,20 @@ export function Timeline() {
         {/* Inline Filters */}
         <div className="flex items-center gap-2 flex-wrap flex-1 justify-end">
           {/* Session Selector */}
-          <select
+          <CustomSelect
             value={effectiveSessionId || ""}
-            onChange={(e) => handleSessionSelect(e.target.value)}
-            className="px-2 py-1.5 bg-bg-base border border-border-default rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-primary/50 max-w-[180px]"
-          >
-            {readySessions.map((session) => (
-              <option key={session.session_id} value={session.session_id}>
-                {session.original_filename}
-              </option>
-            ))}
-          </select>
+            onChange={handleSessionSelect}
+            options={readySessions.map((session) => ({
+              value: session.session_id,
+              label: session.original_filename,
+            }))}
+            placeholder="Select session..."
+            className="max-w-[180px]"
+          />
 
+          {/* Table-only filters — hidden in interactive mode */}
+          {viewMode === "table" && (
+            <>
           {/* Search */}
           <div className="relative flex-1 min-w-[180px] max-w-[280px]">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
@@ -483,11 +486,13 @@ export function Timeline() {
             <Download className="w-3.5 h-3.5" />
             CSV
           </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Stats Bar - More compact */}
-      {data && (
+      {data && viewMode === "table" && (
         <div className="flex items-center gap-3 text-xs text-text-muted">
           <span>
             Showing <span className="font-semibold text-brand-primary">{Math.min(visibleCount, filteredEvents.length)}</span> of{" "}
@@ -537,7 +542,7 @@ export function Timeline() {
 
         {filteredEvents.length > 0 && (
           <div className="flex-1 overflow-auto">
-            <table className="w-full">
+            <table className="w-full table-fixed">
               <thead className="sticky top-0 bg-bg-elevated border-b border-border-subtle z-10">
                 <tr>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-text-muted uppercase tracking-wide w-48">

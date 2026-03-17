@@ -42,7 +42,7 @@ export function Investigations() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const { currentInvestigation, setCurrentInvestigation, setInvestigations, clearInvestigation } = useInvestigationStore();
+  const { currentInvestigation, setCurrentInvestigation, setInvestigations, clearInvestigation, removeInvestigation } = useInvestigationStore();
   const { clearSession } = useSessionStore();
   const { addToast } = useToast();
   const [showCreateModal, setShowCreateModal] = useState(searchParams.get("create") === "true");
@@ -94,9 +94,9 @@ export function Investigations() {
     mutationFn: deleteInvestigation,
     onSuccess: (_data, deletedId) => {
       queryClient.invalidateQueries({ queryKey: ["investigations"] });
-      // If deleted investigation was the current one, clear all state
+      // Remove from store immediately so all pages see the update
+      removeInvestigation(deletedId);
       if (currentInvestigation?.id === deletedId) {
-        clearInvestigation();
         clearSession();
       }
       addToast({
@@ -397,7 +397,7 @@ export function Investigations() {
               <p className="text-text-muted mb-6 max-w-sm mx-auto">
                 Create an investigation to organize your forensic analysis sessions and upload UAC archives.
               </p>
-              <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => setShowCreateModal(true)}>
+              <button className="flex items-center gap-2 mx-auto px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => setShowCreateModal(true)}>
                 <Plus className="w-4 h-4" />
                 Create your first investigation
               </button>

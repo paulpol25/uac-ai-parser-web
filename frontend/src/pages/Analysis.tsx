@@ -4,13 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { Shield, FolderOpen } from "lucide-react";
 import { MitreAttackMap } from "@/components/features/MitreAttackMap";
 import { IOCDashboard } from "@/components/features/IOCDashboard";
-import { SessionComparison } from "@/components/features/SessionComparison";
 import { EntityGraph } from "@/components/features/EntityGraph";
 import { useInvestigationStore } from "@/stores/investigationStore";
 import { useSessionStore } from "@/stores/sessionStore";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { getInvestigation } from "@/services/api";
 
-type AnalysisTab = "mitre" | "iocs" | "graph" | "compare";
+type AnalysisTab = "mitre" | "iocs" | "graph";
 
 export function Analysis() {
   const navigate = useNavigate();
@@ -66,7 +66,7 @@ export function Analysis() {
 
           {/* Tab toggle */}
           <div className="flex rounded-lg border border-border-default overflow-hidden text-xs ml-2">
-            {(["mitre", "iocs", "graph", "compare"] as const).map((t) => (
+            {(["mitre", "iocs", "graph"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -76,26 +76,23 @@ export function Analysis() {
                     : "bg-bg-base text-text-muted hover:text-text-primary"
                 }`}
               >
-                {t === "mitre" ? "MITRE ATT&CK" : t === "iocs" ? "IOCs" : t === "graph" ? "Entities" : "Compare"}
+                {t === "mitre" ? "MITRE ATT&CK" : t === "iocs" ? "IOCs" : "Entities"}
               </button>
             ))}
           </div>
         </div>
 
         {/* Session selector */}
-        {tab !== "compare" && (
-          <select
-            value={selectedSessionId || ""}
-            onChange={(e) => setSelectedSessionId(e.target.value)}
-            className="px-2 py-1.5 bg-bg-base border border-border-default rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-primary/50 max-w-[200px]"
-          >
-            {sessions.map((s) => (
-              <option key={s.session_id} value={s.session_id}>
-                {s.original_filename}
-              </option>
-            ))}
-          </select>
-        )}
+        <CustomSelect
+          value={selectedSessionId || ""}
+          onChange={setSelectedSessionId}
+          options={sessions.map((s) => ({
+            value: s.session_id,
+            label: s.original_filename,
+          }))}
+          placeholder="Select session..."
+          className="max-w-[200px]"
+        />
       </div>
 
       {/* Tab content */}
@@ -111,14 +108,6 @@ export function Analysis() {
         )}
         {tab === "graph" && selectedSessionId && (
           <EntityGraph sessionId={selectedSessionId} />
-        )}
-        {tab === "compare" && (
-          <SessionComparison
-            sessions={sessions.map((s) => ({
-              session_id: s.session_id,
-              label: s.original_filename,
-            }))}
-          />
         )}
       </div>
     </div>

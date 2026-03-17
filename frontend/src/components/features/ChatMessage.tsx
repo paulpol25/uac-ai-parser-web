@@ -227,7 +227,7 @@ function ReasoningSteps({ steps, defaultExpanded = false, isStreaming = false }:
       </button>
 
       {isExpanded && (
-        <div className="mt-3 ml-6 space-y-2 border-l-2 border-border-subtle pl-4">
+        <div className="mt-3 ml-6 space-y-2 border-l-2 border-border-subtle pl-4 overflow-hidden">
           {thinkingSteps.map((step, i) => (
             <StepDisplay key={i} step={step} index={i + 1} />
           ))}
@@ -249,25 +249,25 @@ function StepDisplay({ step, index }: { step: AgentStep; index: number }) {
 
   if (step.type === "thinking") {
     return (
-      <div className="flex items-start gap-2 text-sm">
+      <div className="flex items-start gap-2 text-sm min-w-0">
         <div className="shrink-0 w-5 h-5 rounded-full bg-brand-primary/10 flex items-center justify-center text-xs text-brand-primary">
           {index}
         </div>
-        <p className="text-text-secondary italic">{step.content}</p>
+        <p className="text-text-secondary italic break-words min-w-0">{step.content}</p>
       </div>
     );
   }
 
   if (step.type === "tool") {
     return (
-      <div className="flex items-start gap-2 text-sm">
+      <div className="flex items-start gap-2 text-sm min-w-0">
         <div className="shrink-0 w-5 h-5 rounded-full bg-info/10 flex items-center justify-center">
           <Icon className="w-3 h-3 text-info" />
         </div>
-        <div>
+        <div className="min-w-0">
           <span className="text-text-primary font-medium">{step.tool}</span>
           {step.params && (
-            <span className="text-text-muted ml-2 font-mono text-xs">({step.params})</span>
+            <span className="text-text-muted ml-2 font-mono text-xs break-all">({step.params})</span>
           )}
         </div>
       </div>
@@ -276,9 +276,9 @@ function StepDisplay({ step, index }: { step: AgentStep; index: number }) {
 
   if (step.type === "result") {
     return (
-      <div className="flex items-start gap-2 text-sm ml-7">
-        <span className="text-success">→</span>
-        <p className="text-text-secondary">{step.content}</p>
+      <div className="flex items-start gap-2 text-sm ml-7 min-w-0">
+        <span className="text-success shrink-0">→</span>
+        <p className="text-text-secondary break-words min-w-0">{step.content}</p>
       </div>
     );
   }
@@ -411,9 +411,9 @@ export function ChatMessage({ message, isStreaming = false, showSources = true, 
       <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand-primary/20 to-purple-500/20 flex items-center justify-center shrink-0">
         <Brain className="w-4 h-4 text-brand-primary" />
       </div>
-      <div className="flex-1 max-w-[85%]">
+      <div className="flex-1 max-w-[85%] min-w-0">
         {/* Message card */}
-        <div className="rounded-2xl rounded-tl-sm px-4 py-3 bg-bg-surface border border-border-subtle shadow-sm">
+        <div className="rounded-2xl rounded-tl-sm px-4 py-3 bg-bg-surface border border-border-subtle shadow-sm overflow-hidden">
           {showTypingIndicator ? (
             <StreamingIndicator />
           ) : isStreaming && !hasAgenticContent ? (

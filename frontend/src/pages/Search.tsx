@@ -19,6 +19,7 @@ import {
 import { Spinner } from "@/components/ui/Loader";
 import { Input } from "@/components/ui/Input";
 import { ScrollToTop } from "@/components/ui/ScrollToTop";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useInvestigationStore } from "@/stores/investigationStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { getInvestigation } from "@/services/api";
@@ -364,7 +365,7 @@ export function Search() {
               Upload and parse a UAC archive to search through logs. Go to the Dashboard to upload files.
             </p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => navigate("/")}>
+          <button className="flex items-center gap-2 mx-auto px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => navigate("/")}>
             Go to Dashboard
           </button>
         </div>
@@ -386,17 +387,16 @@ export function Search() {
         {/* Inline Filters */}
         <div className="flex items-center gap-2 flex-wrap flex-1 justify-end">
           {/* Session selector */}
-          <select
+          <CustomSelect
             value={effectiveSessionId || ""}
-            onChange={(e) => handleSessionSelect(e.target.value)}
-            className="px-2 py-1.5 bg-bg-base border border-border-default rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-primary/50 max-w-[180px]"
-          >
-            {readySessions.map((s: { session_id: string; original_filename: string }) => (
-              <option key={s.session_id} value={s.session_id}>
-                {s.original_filename}
-              </option>
-            ))}
-          </select>
+            onChange={handleSessionSelect}
+            options={readySessions.map((s: { session_id: string; original_filename: string }) => ({
+              value: s.session_id,
+              label: s.original_filename,
+            }))}
+            placeholder="Select session..."
+            className="max-w-[180px]"
+          />
 
           {/* Search Input */}
           <div className="relative flex-1 min-w-[200px] max-w-[300px]">
@@ -428,27 +428,19 @@ export function Search() {
           {/* Filter Dropdowns */}
           {filterOptions && (
             <>
-              <select
+              <CustomSelect
                 value={sourceTypeFilter}
-                onChange={(e) => { setSourceTypeFilter(e.target.value); setPage(1); }}
-                className="px-2 py-1.5 bg-bg-base border border-border-default rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
-              >
-                <option value="">Source Type</option>
-                {filterOptions.source_types.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
+                onChange={(v) => { setSourceTypeFilter(v); setPage(1); }}
+                options={[{ value: "", label: "Source Type" }, ...filterOptions.source_types.map(type => ({ value: type, label: type }))]}
+                placeholder="Source Type"
+              />
               
-              <select
+              <CustomSelect
                 value={categoryFilter}
-                onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-                className="px-2 py-1.5 bg-bg-base border border-border-default rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-brand-primary/50"
-              >
-                <option value="">Artifact Category</option>
-                {filterOptions.artifact_categories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+                onChange={(v) => { setCategoryFilter(v); setPage(1); }}
+                options={[{ value: "", label: "Artifact Category" }, ...filterOptions.artifact_categories.map(cat => ({ value: cat, label: cat }))]}
+                placeholder="Artifact Category"
+              />
             </>
           )}
 

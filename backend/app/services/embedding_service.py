@@ -28,8 +28,12 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Settings file path
-SETTINGS_FILE = Path.home() / '.uac-ai' / 'settings.json'
+# Settings file path — use persistent Docker volume when available
+import os
+SETTINGS_FILE = Path(
+    os.environ.get("UAC_SETTINGS_PATH",
+                   "/app/data/settings.json" if os.path.isdir("/app/data") else str(Path.home() / '.uac-ai' / 'settings.json'))
+)
 
 # Model options with their dimensions and descriptions
 EMBEDDING_MODELS = {
