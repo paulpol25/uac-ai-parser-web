@@ -29,7 +29,7 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA busy_timeout=30000")  # 30 second timeout
+    cursor.execute("PRAGMA busy_timeout=60000")  # 60 second timeout
     cursor.close()
 
 
@@ -49,6 +49,43 @@ def _sqlite_migrate(db):
             if column not in cols:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
                 conn.commit()
+
+
+def _pg_migrate(db):
+    """Add columns / fix constraints on existing PostgreSQL tables that db.create_all() can't handle."""
+    migrations = [
+        ("users", "role", "VARCHAR(20) DEFAULT 'operator'"),
+        ("users", "operator_permissions", "JSONB DEFAULT '{}'"),
+    ]
+    with db.engine.connect() as conn:
+        for table, column, col_type in migrations:
+            result = conn.execute(text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = :table AND column_name = :column"
+            ), {"table": table, "column": column})
+            if not result.fetchone():
+                conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {column} {col_type}'))
+                logger.info(f"[PG Migrate] Added column {table}.{column}")
+
+        # ── Ensure agent_commands CHECK constraint includes all command types ──
+        ALL_COMMAND_TYPES = (
+            "'run_uac','exec_command','collect_file','run_check','shutdown',"
+            "'collect_logs','hash_files','persistence_check','network_capture',"
+            "'filesystem_timeline','docker_inspect','yara_scan','memory_dump'"
+        )
+        result = conn.execute(text(
+            "SELECT 1 FROM information_schema.table_constraints "
+            "WHERE constraint_name = 'chk_command_type' AND table_name = 'agent_commands'"
+        ))
+        if result.fetchone():
+            conn.execute(text("ALTER TABLE agent_commands DROP CONSTRAINT chk_command_type"))
+            conn.execute(text(
+                f"ALTER TABLE agent_commands ADD CONSTRAINT chk_command_type "
+                f"CHECK (command_type IN ({ALL_COMMAND_TYPES}))"
+            ))
+            logger.info("[PG Migrate] Updated chk_command_type constraint")
+
+        conn.commit()
 
 
 def _cleanup_stuck_sessions():
@@ -84,6 +121,39 @@ def _init_redis(app):
             app.redis = None
     else:
         app.redis = None
+
+
+def _seed_admin(app):
+    """Create an admin user from environment variables if none exists."""
+    import os as _os
+    email = _os.environ.get("ADMIN_EMAIL", "").strip()
+    password = _os.environ.get("ADMIN_PASSWORD", "").strip()
+    username = _os.environ.get("ADMIN_USERNAME", "admin").strip()
+
+    if not email or not password:
+        return
+
+    from app.models import User
+    from app.services.auth_providers.local_provider import LocalAuthProvider
+
+    existing = User.query.filter_by(email=email.lower()).first()
+    if existing:
+        # Update password so env-var credentials always work (upsert behaviour)
+        existing.password_hash = LocalAuthProvider.hash_password(password)
+        existing.role = "admin"
+        db.session.commit()
+        logger.info(f"[Admin] Updated credentials for admin user: {email}")
+        return
+
+    user = User(
+        username=username,
+        email=email.lower(),
+        password_hash=LocalAuthProvider.hash_password(password),
+        role="admin",
+    )
+    db.session.add(user)
+    db.session.commit()
+    logger.info(f"[Admin] Seeded admin user: {email}")
 
 
 def _load_integration_settings(app):
@@ -148,13 +218,27 @@ def create_app(config_name: str | None = None) -> Flask:
         if _is_sqlite(app):
             # Enable SQLite WAL mode for better concurrency
             event.listen(db.engine, "connect", _set_sqlite_pragma)
-            # Auto-create tables for SQLite dev; PostgreSQL uses migrations/init scripts
-            db.create_all()
+
+        # Create any missing tables (safe for both SQLite and PostgreSQL —
+        # uses CREATE TABLE IF NOT EXISTS under the hood)
+        db.create_all()
+
+        if _is_sqlite(app):
             # Add columns that create_all can't add to existing tables
             _sqlite_migrate(db)
+        else:
+            # Add columns that create_all can't add to existing PostgreSQL tables
+            _pg_migrate(db)
         
         # Cleanup any sessions stuck in "processing" state from previous crashes
         _cleanup_stuck_sessions()
+
+        # Seed built-in playbooks into the database
+        from app.services.agent_service import AgentService
+        AgentService.seed_builtin_playbooks()
+
+        # Seed admin user from env vars (ADMIN_EMAIL, ADMIN_PASSWORD)
+        _seed_admin(app)
     
     # Load saved integration settings into Flask config
     _load_integration_settings(app)
@@ -182,6 +266,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.routes.admin import admin_bp
     from app.routes.agents import agents_bp
     from app.routes.sheetstorm import sheetstorm_bp
+    from app.routes.yara_rules import yara_bp
     
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(auth_bp, url_prefix="/api/v1/auth")
@@ -196,10 +281,10 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(admin_bp, url_prefix="/api/v1/admin")
     app.register_blueprint(agents_bp, url_prefix="/api/v1/agents")
     app.register_blueprint(sheetstorm_bp, url_prefix="/api/v1/sheetstorm")
+    app.register_blueprint(yara_bp, url_prefix="/api/v1/yara-rules")
     
-    # Initialize WebSocket support
-    from app.websocket import init_socketio
-    init_socketio(app)
+    # WebSocket middleware is applied at server startup in run.py.
+    # No init needed here — init_websocket() wraps the WSGI app at serve time.
     
     # Serve static files in production (when built frontend is present)
     static_folder = os.environ.get("STATIC_FOLDER") or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")

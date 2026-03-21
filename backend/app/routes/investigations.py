@@ -7,11 +7,11 @@ import logging
 import shutil
 import subprocess
 from pathlib import Path
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, current_app
 from datetime import datetime
 
 from app.models import db, Investigation, Session, User, Chunk, FileHash, Entity, EntityRelationship, ChunkRelevance, Chat, MitreMapping
-from app.services.auth_providers import get_auth_provider
+from app.routes.auth import require_auth, require_permission
 
 logger = logging.getLogger(__name__)
 
@@ -19,35 +19,12 @@ investigations_bp = Blueprint("investigations", __name__)
 
 
 def get_current_user_id() -> int:
-    """
-    Get current user ID from auth token or create/use default user.
-    
-    If Authorization header is present and valid, use that user.
-    Otherwise, fall back to default user for backwards compatibility.
-    """
-    # Check for auth token
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        provider = get_auth_provider()
-        user = provider.verify_token(token)
-        if user:
-            return user.id
-    
-    # Fall back to default user
-    user = User.query.filter_by(username="default").first()
-    if not user:
-        user = User(
-            username="default",
-            email="default@local",
-            password_hash="not-implemented"
-        )
-        db.session.add(user)
-        db.session.commit()
-    return user.id
+    """Get current user ID from g.current_user set by @require_auth."""
+    return g.current_user.id
 
 
 @investigations_bp.route("", methods=["GET"])
+@require_auth
 def list_investigations():
     """List all investigations for the current user."""
     user_id = get_current_user_id()
@@ -77,6 +54,7 @@ def list_investigations():
 
 
 @investigations_bp.route("", methods=["POST"])
+@require_permission("manage_investigations")
 def create_investigation():
     """Create a new investigation."""
     user_id = get_current_user_id()
@@ -110,6 +88,7 @@ def create_investigation():
 
 
 @investigations_bp.route("/<int:investigation_id>", methods=["GET"])
+@require_auth
 def get_investigation(investigation_id: int):
     """Get investigation details including sessions."""
     user_id = get_current_user_id()
@@ -147,6 +126,7 @@ def get_investigation(investigation_id: int):
                 "total_artifacts": s.total_artifacts,
                 "total_chunks": s.total_chunks,
                 "status": s.status,
+                "has_embeddings": s.has_embeddings,
                 "parsed_at": s.parsed_at.isoformat() if s.parsed_at else None
             }
             for s in sessions
@@ -155,6 +135,7 @@ def get_investigation(investigation_id: int):
 
 
 @investigations_bp.route("/<int:investigation_id>", methods=["PUT"])
+@require_permission("manage_investigations")
 def update_investigation(investigation_id: int):
     """Update investigation details."""
     user_id = get_current_user_id()
@@ -202,6 +183,7 @@ def _safe_rmtree(path: Path):
 
 
 @investigations_bp.route("/<int:investigation_id>", methods=["DELETE"])
+@require_permission("manage_investigations")
 def delete_investigation(investigation_id: int):
     """Hard-delete an investigation and all associated files."""
     user_id = get_current_user_id()
@@ -220,7 +202,9 @@ def delete_investigation(investigation_id: int):
     # Collect file paths to delete after DB commit
     sessions = Session.query.filter_by(investigation_id=investigation_id).all()
     paths_to_delete = []
+    session_ids_for_chroma = []
     for session in sessions:
+        session_ids_for_chroma.append(session.session_id)
         if session.extract_path:
             p = Path(session.extract_path)
             if p.exists():
@@ -234,6 +218,18 @@ def delete_investigation(investigation_id: int):
     db.session.delete(investigation)
     db.session.commit()
     
+    # Clean up ChromaDB collections
+    try:
+        from app.services.tiered_rag_service import get_chroma_client
+        client = get_chroma_client()
+        for sid in session_ids_for_chroma:
+            try:
+                client.delete_collection(f"session_{sid}")
+            except Exception:
+                pass
+    except Exception:
+        pass
+    
     # Clean up filesystem after successful DB commit
     for p in paths_to_delete:
         _safe_rmtree(p)
@@ -245,6 +241,7 @@ def delete_investigation(investigation_id: int):
 
 
 @investigations_bp.route("/<int:investigation_id>/sessions/<session_id>", methods=["GET"])
+@require_auth
 def get_session(investigation_id: int, session_id: str):
     """Get session details."""
     user_id = get_current_user_id()
@@ -291,6 +288,7 @@ def get_session(investigation_id: int, session_id: str):
 
 
 @investigations_bp.route("/<int:investigation_id>/sessions/<session_id>", methods=["DELETE"])
+@require_permission("manage_investigations")
 def delete_session(investigation_id: int, session_id: str):
     """Delete a session and its files from an investigation."""
     user_id = get_current_user_id()
@@ -333,8 +331,20 @@ def delete_session(investigation_id: int, session_id: str):
             paths_to_delete.append(p)
     
     # Delete session — ON DELETE CASCADE handles child rows
+    chroma_collection_name = f"session_{session.session_id}"
     db.session.delete(session)
     db.session.commit()
+    
+    # Clean up ChromaDB collection
+    try:
+        from app.services.tiered_rag_service import get_chroma_client
+        client = get_chroma_client()
+        try:
+            client.delete_collection(chroma_collection_name)
+        except Exception:
+            pass
+    except Exception:
+        pass
     
     # Clean up filesystem after DB commit
     for p in paths_to_delete:

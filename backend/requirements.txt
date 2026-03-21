@@ -11,8 +11,7 @@ psycopg2-binary>=2.9.0
 # Redis
 redis>=5.0.0
 
-# WebSocket
-flask-socketio>=5.3.0
+# WebSocket (raw gevent-websocket, no Socket.IO)
 gevent>=24.2.1
 gevent-websocket>=0.10.1
 
@@ -27,6 +26,7 @@ chromadb>=0.4.0
 sentence-transformers>=2.2.0
 tiktoken>=0.5.0
 rank-bm25>=0.2.2
+einops
 
 # Optional LLM providers (install as needed)
 openai>=1.0.0  # For OpenAI GPT models

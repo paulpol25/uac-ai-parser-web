@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(80) UNIQUE NOT NULL,
     email VARCHAR(120) UNIQUE NOT NULL,
     password_hash VARCHAR(256) NOT NULL,
+    role VARCHAR(20) DEFAULT 'operator',
+    operator_permissions JSONB DEFAULT '{}',
     created_at TIMESTAMP DEFAULT NOW(),
     last_login TIMESTAMP
 );

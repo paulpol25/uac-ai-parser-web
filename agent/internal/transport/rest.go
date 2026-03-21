@@ -19,6 +19,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"uac-ai-agent/internal/config"
+	"uac-ai-agent/internal/crypto"
 	"uac-ai-agent/internal/sysinfo"
 	"uac-ai-agent/internal/worker"
 )
@@ -29,16 +30,21 @@ type Transport struct {
 	cmdCh    chan<- worker.Command
 	resultCh <-chan worker.Result
 	client   *http.Client
+	upload   *http.Client // separate long-timeout client for uploads
+	enc      *crypto.Engine
 	done     chan struct{}
 }
 
 // New creates a Transport.
-func New(cfg *config.Config, cmdCh chan<- worker.Command, resultCh <-chan worker.Result) *Transport {
+func New(cfg *config.Config, cmdCh chan<- worker.Command, resultCh <-chan worker.Result, enc *crypto.Engine) *Transport {
+	transport := cfg.HTTPTransport()
 	return &Transport{
 		cfg:      cfg,
 		cmdCh:    cmdCh,
 		resultCh: resultCh,
-		client:   &http.Client{Timeout: 30 * time.Second},
+		client:   &http.Client{Timeout: 30 * time.Second, Transport: transport},
+		upload:   &http.Client{Timeout: 30 * time.Minute, Transport: transport},
+		enc:      enc,
 		done:     make(chan struct{}),
 	}
 }
@@ -75,9 +81,13 @@ func (t *Transport) Close() {
 
 func (t *Transport) checkin() {
 	info := sysinfo.Collect()
-	body, _ := json.Marshal(map[string]interface{}{
+	body, err := json.Marshal(map[string]interface{}{
 		"system_info": info,
 	})
+	if err != nil {
+		log.Errorf("Checkin marshal: %v", err)
+		return
+	}
 
 	url := t.cfg.APIURL("/api/v1/agents/checkin")
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
@@ -110,7 +120,7 @@ func (t *Transport) checkin() {
 	}
 
 	for _, cmd := range result.Commands {
-		log.Infof("Received command: %s (%s)", cmd.Type, cmd.ID[:8])
+		log.Infof("Received command: %s (%s)", cmd.Type, config.SafeIDPrefix(cmd.ID))
 		t.cmdCh <- cmd
 	}
 }
@@ -128,17 +138,41 @@ func (t *Transport) resultLoop() {
 			t.reportResult(r)
 			if r.FilePath != "" {
 				t.uploadFile(r.FilePath, r.CommandID)
+				// Clean up local file after successful upload
+				os.Remove(r.FilePath)
 			}
 		}
 	}
 }
 
 func (t *Transport) reportResult(r worker.Result) {
-	body, _ := json.Marshal(map[string]interface{}{
+	payload := map[string]interface{}{
 		"command_id": r.CommandID,
 		"status":     r.Status,
 		"result":     r.Data,
-	})
+	}
+
+	// Encrypt result data if encryption is enabled
+	if t.enc.Enabled() {
+		resultJSON, err := json.Marshal(r.Data)
+		if err != nil {
+			log.Errorf("Report marshal result data: %v", err)
+			return
+		}
+		envelope, err := t.enc.Encrypt(resultJSON)
+		if err != nil {
+			log.Errorf("Report encrypt: %v", err)
+			return
+		}
+		payload["result"] = nil
+		payload["encrypted_result"] = envelope
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		log.Errorf("Report marshal: %v", err)
+		return
+	}
 
 	url := t.cfg.APIURL("/api/v1/agents/report")
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
@@ -162,7 +196,7 @@ func (t *Transport) reportResult(r worker.Result) {
 		return
 	}
 
-	log.Infof("Reported result for command %s: %s", r.CommandID[:8], r.Status)
+	log.Infof("Reported result for command %s: %s", config.SafeIDPrefix(r.CommandID), r.Status)
 }
 
 func (t *Transport) uploadFile(path string, commandID string) {
@@ -215,8 +249,7 @@ func (t *Transport) tryUpload(path string, commandID string) error {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("X-Api-Key", t.cfg.APIKey)
 
-	uploadClient := &http.Client{Timeout: 30 * time.Minute}
-	resp, err := uploadClient.Do(req)
+	resp, err := t.upload.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP: %w", err)
 	}
@@ -232,6 +265,6 @@ func (t *Transport) tryUpload(path string, commandID string) error {
 	if info != nil {
 		size = info.Size()
 	}
-	log.Infof("Uploaded %s (%d bytes, command %s)", filepath.Base(path), size, commandID[:8])
+	log.Infof("Uploaded %s (%d bytes, command %s)", filepath.Base(path), size, config.SafeIDPrefix(commandID))
 	return nil
 }

@@ -212,6 +212,8 @@ __marimo__/
 
 # Testing files
 intrusion-simulation.md
+test-yara-rules.yar
+report_incident.md
 
 # Uploaded files and extracts
 uploads/

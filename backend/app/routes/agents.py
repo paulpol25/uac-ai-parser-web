@@ -15,9 +15,10 @@ from pathlib import Path
 
 from flask import Blueprint, request, jsonify, g, current_app, send_file
 
-from app.models import db
+from app.models import db, Playbook
 from app.services.agent_service import AgentService
 from app.services.auth_providers import get_auth_provider
+from app.routes.auth import require_auth, require_permission
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ def _verify_bootstrap_token(api_key: str, token: str) -> bool:
 # ================================================================== #
 
 @agents_bp.route("", methods=["GET"])
-@require_user
+@require_auth
 def list_agents():
     """List agents, optionally filtered by investigation."""
     inv_id = request.args.get("investigation_id", type=int)
@@ -103,7 +104,7 @@ def list_agents():
 
 
 @agents_bp.route("", methods=["POST"])
-@require_user
+@require_permission("manage_agents")
 def register_agent():
     """Register a new agent for an investigation."""
     data = request.get_json() or {}
@@ -120,7 +121,7 @@ def register_agent():
 
 
 @agents_bp.route("/<agent_id>", methods=["GET"])
-@require_user
+@require_auth
 def get_agent(agent_id: str):
     """Get details for a specific agent."""
     agent = _svc.get_agent(agent_id)
@@ -133,7 +134,7 @@ def get_agent(agent_id: str):
 
 
 @agents_bp.route("/<agent_id>", methods=["DELETE"])
-@require_user
+@require_permission("manage_agents")
 def delete_agent(agent_id: str):
     """Delete an agent and all associated data."""
     if not _svc.delete_agent(agent_id):
@@ -142,7 +143,7 @@ def delete_agent(agent_id: str):
 
 
 @agents_bp.route("/<agent_id>/commands", methods=["GET"])
-@require_user
+@require_auth
 def list_commands(agent_id: str):
     """List commands for an agent."""
     status = request.args.get("status")
@@ -150,7 +151,7 @@ def list_commands(agent_id: str):
 
 
 @agents_bp.route("/<agent_id>/commands", methods=["POST"])
-@require_user
+@require_permission("dispatch_commands")
 def dispatch_command(agent_id: str):
     """Dispatch a command to an agent."""
     data = request.get_json() or {}
@@ -163,11 +164,160 @@ def dispatch_command(agent_id: str):
     except ValueError as e:
         return jsonify({"error": "bad_request", "message": str(e)}), 400
 
+    # Push immediately via WebSocket (if agent is connected)
+    from app.websocket import push_command_to_agent
+    push_command_to_agent(agent_id, result["command_id"], command_type, data.get("payload"))
+
     return jsonify(result), 201
 
 
+@agents_bp.route("/<agent_id>/commands/batch", methods=["POST"])
+@require_permission("dispatch_commands")
+def batch_dispatch(agent_id: str):
+    """Dispatch multiple commands to an agent at once."""
+    data = request.get_json() or {}
+    commands = data.get("commands", [])
+    if not commands or not isinstance(commands, list):
+        return jsonify({"error": "missing_field", "message": "commands array is required"}), 400
+    if len(commands) > 20:
+        return jsonify({"error": "bad_request", "message": "Maximum 20 commands per batch"}), 400
+
+    try:
+        results = _svc.batch_dispatch(agent_id, commands)
+    except ValueError as e:
+        return jsonify({"error": "bad_request", "message": str(e)}), 400
+
+    # Push all dispatched commands via WebSocket
+    from app.websocket import push_command_to_agent
+    for cmd_result, cmd_input in zip(results, commands):
+        push_command_to_agent(agent_id, cmd_result["command_id"], cmd_input["type"], cmd_input.get("payload"))
+
+    return jsonify({"commands": results}), 201
+
+
+@agents_bp.route("/commands/<command_id>/cancel", methods=["POST"])
+@require_permission("dispatch_commands")
+def cancel_command(command_id: str):
+    """Cancel a pending or running command."""
+    if not _svc.cancel_command(command_id):
+        return jsonify({"error": "not_found", "message": "Command not found or already completed"}), 404
+    return jsonify({"message": "Command cancelled"})
+
+
+@agents_bp.route("/<agent_id>/playbook", methods=["POST"])
+@require_permission("run_playbooks")
+def run_playbook(agent_id: str):
+    """Run a predefined playbook (sequence of forensic commands)."""
+    data = request.get_json() or {}
+    playbook_name = data.get("playbook")
+    if not playbook_name:
+        return jsonify({"error": "missing_field", "message": "playbook name is required"}), 400
+
+    try:
+        result = _svc.run_playbook(agent_id, playbook_name)
+    except ValueError as e:
+        return jsonify({"error": "bad_request", "message": str(e)}), 400
+
+    return jsonify(result), 201
+
+
+@agents_bp.route("/playbooks", methods=["GET"])
+@require_auth
+def list_playbooks():
+    """List available playbooks (built-in + custom) from the database."""
+    playbooks = Playbook.query.order_by(Playbook.is_builtin.desc(), Playbook.name).all()
+    return jsonify({"playbooks": {p.name: p.to_dict() for p in playbooks}})
+
+
+@agents_bp.route("/playbooks", methods=["POST"])
+@require_permission("manage_playbooks")
+def create_playbook():
+    """Create a custom playbook."""
+    data = request.get_json() or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "bad_request", "message": "Playbook name is required"}), 400
+    if Playbook.query.filter_by(name=name).first():
+        return jsonify({"error": "conflict", "message": "A playbook with that name already exists"}), 409
+    commands = data.get("commands", [])
+    if not commands or not isinstance(commands, list):
+        return jsonify({"error": "bad_request", "message": "commands must be a non-empty list"}), 400
+    # Validate each command
+    for cmd in commands:
+        if not isinstance(cmd, dict) or "type" not in cmd:
+            return jsonify({"error": "bad_request", "message": "Each command must have a 'type' field"}), 400
+        if cmd["type"] not in _svc.VALID_COMMAND_TYPES:
+            return jsonify({"error": "bad_request", "message": f"Invalid command type: {cmd['type']}"}), 400
+
+    pb = Playbook(
+        name=name,
+        description=data.get("description", ""),
+        commands=commands,
+        is_builtin=False,
+        created_by=g.current_user.id if hasattr(g, "current_user") else None,
+    )
+    db.session.add(pb)
+    db.session.commit()
+    return jsonify(pb.to_dict()), 201
+
+
+@agents_bp.route("/playbooks/<int:playbook_id>", methods=["PUT"])
+@require_permission("manage_playbooks")
+def update_playbook(playbook_id: int):
+    """Update a custom playbook. Built-in playbooks cannot be modified."""
+    pb = db.session.get(Playbook, playbook_id)
+    if not pb:
+        return jsonify({"error": "not_found", "message": "Playbook not found"}), 404
+    if pb.is_builtin:
+        return jsonify({"error": "forbidden", "message": "Built-in playbooks cannot be modified"}), 403
+
+    data = request.get_json() or {}
+    if "name" in data:
+        new_name = data["name"].strip()
+        existing = Playbook.query.filter_by(name=new_name).first()
+        if existing and existing.id != pb.id:
+            return jsonify({"error": "conflict", "message": "A playbook with that name already exists"}), 409
+        pb.name = new_name
+    if "description" in data:
+        pb.description = data["description"]
+    if "commands" in data:
+        commands = data["commands"]
+        if not commands or not isinstance(commands, list):
+            return jsonify({"error": "bad_request", "message": "commands must be a non-empty list"}), 400
+        for cmd in commands:
+            if not isinstance(cmd, dict) or "type" not in cmd:
+                return jsonify({"error": "bad_request", "message": "Each command must have a 'type' field"}), 400
+            if cmd["type"] not in _svc.VALID_COMMAND_TYPES:
+                return jsonify({"error": "bad_request", "message": f"Invalid command type: {cmd['type']}"}), 400
+        pb.commands = commands
+
+    db.session.commit()
+    return jsonify(pb.to_dict())
+
+
+@agents_bp.route("/playbooks/<int:playbook_id>", methods=["DELETE"])
+@require_permission("manage_playbooks")
+def delete_playbook(playbook_id: int):
+    """Delete a custom playbook. Built-in playbooks cannot be deleted."""
+    pb = db.session.get(Playbook, playbook_id)
+    if not pb:
+        return jsonify({"error": "not_found", "message": "Playbook not found"}), 404
+    if pb.is_builtin:
+        return jsonify({"error": "forbidden", "message": "Built-in playbooks cannot be deleted"}), 403
+    db.session.delete(pb)
+    db.session.commit()
+    return jsonify({"message": "Playbook deleted"})
+
+
+@agents_bp.route("/command-types", methods=["GET"])
+@require_auth
+def list_command_types():
+    """List all valid command types available for playbook building."""
+    return jsonify({"command_types": sorted(_svc.VALID_COMMAND_TYPES)})
+
+
 @agents_bp.route("/<agent_id>/events", methods=["GET"])
-@require_user
+@require_auth
 def list_events(agent_id: str):
     """List audit events for an agent."""
     limit = request.args.get("limit", 50, type=int)
@@ -175,7 +325,7 @@ def list_events(agent_id: str):
 
 
 @agents_bp.route("/<agent_id>/bootstrap-token", methods=["POST"])
-@require_user
+@require_permission("manage_agents")
 def get_bootstrap_token(agent_id: str):
     """Generate a short-lived one-time token for the bootstrap endpoint (15-min window)."""
     agent = _svc.get_agent(agent_id)
@@ -212,7 +362,14 @@ def get_bootstrap_script(agent_id: str):
             return jsonify({"error": "invalid_backend_url", "message": "backend_url must start with http:// or https://"}), 400
         backend_url = custom_backend.rstrip("/")
     else:
-        backend_url = request.host_url.rstrip("/")
+        # Prefer X-Forwarded-Host (set by nginx) to preserve port,
+        # then fall back to request.host_url.
+        fwd_host = request.headers.get("X-Forwarded-Host", "").strip()
+        fwd_proto = request.headers.get("X-Forwarded-Proto", "http").strip()
+        if fwd_host:
+            backend_url = f"{fwd_proto}://{fwd_host}".rstrip("/")
+        else:
+            backend_url = request.host_url.rstrip("/")
 
     script = _svc.generate_bootstrap_script(agent_id, agent.api_key, backend_url)
 
@@ -223,7 +380,7 @@ def get_bootstrap_script(agent_id: str):
 
 
 @agents_bp.route("/commands/<command_id>", methods=["GET"])
-@require_user
+@require_auth
 def get_command(command_id: str):
     """Get details for a specific command."""
     cmd = _svc.get_command(command_id)
@@ -233,7 +390,7 @@ def get_command(command_id: str):
 
 
 @agents_bp.route("/<agent_id>/files/<filename>", methods=["GET"])
-@require_user
+@require_auth
 def download_agent_file(agent_id: str, filename: str):
     """Download a collected file from an agent."""
     path = _svc.get_upload_path(agent_id, filename)
@@ -287,18 +444,12 @@ def agent_checkin():
     data = request.get_json(silent=True) or {}
     result = _svc.checkin(g.current_agent, system_info=data.get("system_info"))
 
-    # Notify UI clients via SocketIO
+    # Notify UI clients via WebSocket
     try:
-        from app.websocket import socketio
-        agent = g.current_agent
-        socketio.emit("agent_heartbeat", {
-            "agent_id": agent.id,
-            "hostname": agent.hostname,
-            "status": agent.status,
-            "ip_address": agent.ip_address,
-        }, namespace="/ws/agent", room=f"inv:{agent.investigation_id}")
+        from app.websocket import notify_ui_agent_heartbeat
+        notify_ui_agent_heartbeat(g.current_agent)
     except Exception:
-        pass  # SocketIO not critical for checkin
+        pass  # WS notification not critical for checkin
 
     return jsonify(result)
 

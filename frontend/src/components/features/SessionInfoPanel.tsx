@@ -142,7 +142,7 @@ export function SessionInfoPanel({ sessionId, compact = false }: SessionInfoPane
       </CardHeader>
       <CardContent className="space-y-4">
         {/* System Info */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {stats.hostname && (
             <div className="flex items-center gap-2">
               <Server className="w-4 h-4 text-text-muted" />

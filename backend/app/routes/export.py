@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify, Response, current_app
 from datetime import datetime
 
 from app.services.export_service import ExportService
+from app.routes.auth import require_permission
 
 export_bp = Blueprint("export", __name__)
 
@@ -13,6 +14,7 @@ SUPPORTED_FORMATS = ["jsonl", "json", "markdown", "csv"]
 
 
 @export_bp.route("", methods=["GET"])
+@require_permission("export_data")
 def export_data():
     """
     Export analysis data in the specified format.
@@ -62,6 +64,7 @@ def export_data():
 
 
 @export_bp.route("/formats", methods=["GET"])
+@require_permission("export_data")
 def list_formats():
     """List available export formats."""
     return jsonify({

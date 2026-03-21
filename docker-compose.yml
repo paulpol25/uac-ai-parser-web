@@ -145,7 +145,7 @@ services:
       MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
       LOG_LEVEL: ${MCP_LOG_LEVEL:-INFO}
     ports:
-      - "127.0.0.1:8811:8811"
+      - "0.0.0.0:8811:8811"
     depends_on:
       backend:
         condition: service_healthy

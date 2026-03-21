@@ -347,7 +347,7 @@ function RenderAnswer({ content, isStreaming }: { content: string; isStreaming?:
   }, [content]);
 
   return (
-    <div className="prose prose-sm prose-invert max-w-none">
+    <div className="prose prose-sm prose-invert max-w-none break-words overflow-hidden">
       <div 
         className="text-sm text-text-primary leading-relaxed"
         dangerouslySetInnerHTML={{ __html: rendered }} 
@@ -391,7 +391,7 @@ export function ChatMessage({ message, isStreaming = false, showSources = true, 
       <div className="flex justify-end gap-3 group">
         <div className="flex flex-col items-end max-w-[75%]">
           <div className="rounded-2xl rounded-tr-sm px-4 py-3 bg-gradient-to-br from-brand-primary to-brand-primary/90 text-white shadow-sm">
-            <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
           </div>
           <div className="flex items-center gap-1 mt-1 text-xs text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
             <Clock className="w-3 h-3" />
@@ -418,7 +418,7 @@ export function ChatMessage({ message, isStreaming = false, showSources = true, 
             <StreamingIndicator />
           ) : isStreaming && !hasAgenticContent ? (
             // During streaming without agentic markers, show raw content with cursor
-            <div className="prose prose-sm prose-invert max-w-none">
+            <div className="prose prose-sm prose-invert max-w-none break-words overflow-hidden">
               <div className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
                 {message.content}
                 <span className="inline-block w-2 h-4 bg-brand-primary/70 ml-0.5 animate-pulse" />

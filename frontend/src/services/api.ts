@@ -182,6 +182,30 @@ export async function parseFile(file: File, investigationId?: number) {
   return response.json();
 }
 
+export async function cancelParse(sessionId: string) {
+  const res = await fetch(`${API_BASE_URL}/parse/${sessionId}/cancel`, {
+    method: "POST",
+    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || "Failed to cancel parse");
+  }
+  return res.json();
+}
+
+export async function triggerEmbed(sessionId: string) {
+  const res = await fetch(`${API_BASE_URL}/parse/${sessionId}/embed`, {
+    method: "POST",
+    headers: { ...getAuthHeader(), "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || "Failed to trigger embedding");
+  }
+  return res.json();
+}
+
 export interface ParseProgressEvent {
   type: "progress" | "keepalive" | "complete" | "error";
   step?: string;
@@ -311,7 +335,8 @@ export async function parseFileWithProgress(
 
 export async function getArtifacts(sessionId: string) {
   const response = await fetch(
-    `${API_BASE_URL}/parse/artifacts?session_id=${sessionId}`
+    `${API_BASE_URL}/parse/artifacts?session_id=${sessionId}`,
+    { headers: headers(false) }
   );
 
   if (!response.ok) {
@@ -589,7 +614,9 @@ export async function getTimeline(
   if (startDate) params.append("start_date", startDate);
   if (endDate) params.append("end_date", endDate);
 
-  const response = await fetch(`${API_BASE_URL}/timeline?${params}`);
+  const response = await fetch(`${API_BASE_URL}/timeline?${params}`, {
+    headers: headers(false),
+  });
 
   if (!response.ok) {
     throw new Error("Failed to get timeline");
@@ -783,6 +810,7 @@ export interface ProcessingSettings {
   enable_hybrid_search: boolean;
   enable_query_expansion: boolean;
   embedding_model: string;
+  auto_embed: boolean;
 }
 
 export async function getProcessingSettings(): Promise<ProcessingSettings> {
@@ -1295,6 +1323,45 @@ export async function downloadAgentFile(agentId: string, filename: string): Prom
   URL.revokeObjectURL(url);
 }
 
+export async function batchDispatch(agentId: string, commands: Array<{ type: string; payload?: Record<string, unknown> }>) {
+  const response = await fetch(`${API_BASE_URL}/agents/${agentId}/commands/batch`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ commands }),
+  });
+  if (!response.ok) throw new Error("Failed to batch dispatch");
+  return response.json();
+}
+
+export async function cancelCommand(commandId: string) {
+  const response = await fetch(`${API_BASE_URL}/agents/commands/${commandId}/cancel`, {
+    method: "POST",
+    headers: headers(false),
+  });
+  if (!response.ok) throw new Error("Failed to cancel command");
+  return response.json();
+}
+
+export async function runPlaybook(agentId: string, playbook: string) {
+  const response = await fetch(`${API_BASE_URL}/agents/${agentId}/playbook`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ playbook }),
+  });
+  if (!response.ok) throw new Error("Failed to run playbook");
+  return response.json();
+}
+
+// listPlaybooks moved to Playbooks CRUD section below
+
+export async function getAgentFilePreview(agentId: string, filename: string): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}/agents/${agentId}/files/${encodeURIComponent(filename)}`, {
+    headers: getAuthHeader(),
+  });
+  if (!res.ok) throw new Error("Failed to get file");
+  return res.text();
+}
+
 // ===== Sheetstorm =====
 
 export async function getSheetstormStatus() {
@@ -1351,5 +1418,229 @@ export async function testIntegration(): Promise<{ success: boolean; message: st
     headers: getAuthHeader(),
   });
   if (!res.ok) throw new Error("Failed to test integration");
+  return res.json();
+}
+
+// ===== YARA Rules =====
+
+export interface YaraRule {
+  id: number;
+  name: string;
+  filename: string;
+  description: string | null;
+  source: "upload" | "elastic_github";
+  file_size: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listYaraRules(source?: string, enabledOnly?: boolean): Promise<YaraRule[]> {
+  const params = new URLSearchParams();
+  if (source) params.set("source", source);
+  if (enabledOnly) params.set("enabled", "true");
+  const res = await fetch(`${API_BASE_URL}/yara-rules?${params}`, { headers: getAuthHeader() });
+  if (!res.ok) throw new Error("Failed to list YARA rules");
+  return res.json();
+}
+
+export async function uploadYaraRule(file: File, description?: string): Promise<YaraRule> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (description) formData.append("description", description);
+  const res = await fetch(`${API_BASE_URL}/yara-rules/upload`, {
+    method: "POST",
+    headers: getAuthHeader(),
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Upload failed" }));
+    throw new Error(err.error || "Upload failed");
+  }
+  return res.json();
+}
+
+export async function deleteYaraRule(ruleId: number): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/yara-rules/${ruleId}`, {
+    method: "DELETE",
+    headers: getAuthHeader(),
+  });
+  if (!res.ok) throw new Error("Failed to delete YARA rule");
+}
+
+export async function toggleYaraRule(ruleId: number, enabled: boolean): Promise<YaraRule> {
+  const res = await fetch(`${API_BASE_URL}/yara-rules/${ruleId}/toggle`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) throw new Error("Failed to toggle YARA rule");
+  return res.json();
+}
+
+export async function batchToggleYaraRules(enabled: boolean, source?: string): Promise<{ updated: number; enabled: boolean }> {
+  const res = await fetch(`${API_BASE_URL}/yara-rules/batch-toggle`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify({ enabled, ...(source ? { source } : {}) }),
+  });
+  if (!res.ok) throw new Error("Failed to batch toggle YARA rules");
+  return res.json();
+}
+
+export async function syncYaraRulesFromGithub(): Promise<{ total_linux_rules: number; added: number; updated: number; errors: string[] }> {
+  const res = await fetch(`${API_BASE_URL}/yara-rules/sync-github`, {
+    method: "POST",
+    headers: getAuthHeader(),
+  });
+  if (!res.ok) throw new Error("Failed to sync YARA rules from GitHub");
+  return res.json();
+}
+
+export async function getYaraRuleContent(ruleId: number): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}/yara-rules/${ruleId}/content`, { headers: getAuthHeader() });
+  if (!res.ok) throw new Error("Failed to get YARA rule content");
+  return res.text();
+}
+
+// ===== Admin: User Management (RBAC) =====
+
+export async function listUsers(): Promise<{ users: User[] }> {
+  const res = await fetch(`${API_BASE_URL}/auth/users`, { headers: getAuthHeader() });
+  if (!res.ok) throw new Error("Failed to list users");
+  return res.json();
+}
+
+export async function updateUser(
+  userId: number,
+  data: { role?: string; operator_permissions?: Record<string, boolean | undefined>; email?: string },
+): Promise<User> {
+  const res = await fetch(`${API_BASE_URL}/auth/users/${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to update user" }));
+    throw new Error(err.message || "Failed to update user");
+  }
+  return res.json();
+}
+
+export async function deleteUser(userId: number): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/auth/users/${userId}`, {
+    method: "DELETE",
+    headers: getAuthHeader(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to delete user" }));
+    throw new Error(err.message || "Failed to delete user");
+  }
+}
+
+export async function listPermissions(): Promise<{ permissions: Record<string, string> }> {
+  const res = await fetch(`${API_BASE_URL}/auth/permissions`, { headers: getAuthHeader() });
+  if (!res.ok) throw new Error("Failed to list permissions");
+  return res.json();
+}
+
+// ===== General Settings =====
+
+export interface GeneralSettingsSchema {
+  [key: string]: {
+    label: string;
+    description: string;
+    type: string;
+    read_only?: boolean;
+  };
+}
+
+export async function getGeneralSettings(): Promise<{
+  settings: Record<string, unknown>;
+  schema: GeneralSettingsSchema;
+}> {
+  const res = await fetch(`${API_BASE_URL}/config/settings/general`, {
+    headers: getAuthHeader(),
+  });
+  if (!res.ok) throw new Error("Failed to get general settings");
+  return res.json();
+}
+
+export async function updateGeneralSettings(
+  settings: Record<string, unknown>,
+): Promise<{ message: string; settings: Record<string, unknown> }> {
+  const res = await fetch(`${API_BASE_URL}/config/settings/general`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error("Failed to update general settings");
+  return res.json();
+}
+
+// ===== Playbooks CRUD =====
+
+export interface Playbook {
+  id: number;
+  name: string;
+  description: string;
+  commands: { type: string; payload?: Record<string, unknown> }[];
+  commands_count: number;
+  is_builtin: boolean;
+  created_by: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export async function listPlaybooks(): Promise<{ playbooks: Record<string, Playbook> }> {
+  const res = await fetch(`${API_BASE_URL}/agents/playbooks`, { headers: getAuthHeader() });
+  if (!res.ok) throw new Error("Failed to list playbooks");
+  return res.json();
+}
+
+export async function createPlaybook(data: {
+  name: string;
+  description: string;
+  commands: { type: string; payload?: Record<string, unknown> }[];
+}): Promise<Playbook> {
+  const res = await fetch(`${API_BASE_URL}/agents/playbooks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to create playbook" }));
+    throw new Error(err.message || "Failed to create playbook");
+  }
+  return res.json();
+}
+
+export async function updatePlaybook(
+  playbookId: number,
+  data: { name?: string; description?: string; commands?: { type: string; payload?: Record<string, unknown> }[] },
+): Promise<Playbook> {
+  const res = await fetch(`${API_BASE_URL}/agents/playbooks/${playbookId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getAuthHeader() },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Failed to update playbook" }));
+    throw new Error(err.message || "Failed to update playbook");
+  }
+  return res.json();
+}
+
+export async function deletePlaybook(playbookId: number): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/agents/playbooks/${playbookId}`, {
+    method: "DELETE",
+    headers: getAuthHeader(),
+  });
+  if (!res.ok) throw new Error("Failed to delete playbook");
+}
+
+export async function listCommandTypes(): Promise<{ command_types: string[] }> {
+  const res = await fetch(`${API_BASE_URL}/agents/command-types`, { headers: getAuthHeader() });
+  if (!res.ok) throw new Error("Failed to list command types");
   return res.json();
 }

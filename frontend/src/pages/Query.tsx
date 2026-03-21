@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/Loader";
 import { Textarea } from "@/components/ui/Input";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useInvestigationStore } from "@/stores/investigationStore";
+import { isViewer } from "@/stores/authStore";
 import { queryAnalysis, queryAgenticAnalysis, getSummary, getAnomalies, getInvestigation, listInvestigations, extractIOCs, listChats, createChat, getChat, deleteChat, addChatMessage, type ChatSummary } from "@/services/api";
 import { ContextPreview } from "@/components/features/ContextPreview";
 import { SessionInfoPanel } from "@/components/features/SessionInfoPanel";
@@ -590,6 +591,7 @@ export function Query() {
               >
                 <MessageSquare className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate flex-1 text-left">{chat.title}</span>
+                {!isViewer() && (
                 <span
                   role="button"
                   tabIndex={0}
@@ -600,6 +602,7 @@ export function Query() {
                 >
                   <Trash2 className="w-3 h-3" />
                 </span>
+                )}
               </button>
             ))}
             
@@ -836,7 +839,7 @@ export function Query() {
                   </span>
                   <button
                     type="submit"
-                    disabled={!input.trim() || isStreaming}
+                    disabled={!input.trim() || isStreaming || isViewer()}
                     className="p-1.5 rounded-md bg-brand-primary text-white hover:bg-brand-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     {isStreaming ? <Spinner className="w-4 h-4" /> : <Send className="w-4 h-4" />}

@@ -5,11 +5,13 @@ from flask import Blueprint, request, jsonify
 from sqlalchemy import or_
 
 from app.models import db, Chunk, Session
+from app.routes.auth import require_auth
 
 search_bp = Blueprint("search", __name__)
 
 
 @search_bp.route("", methods=["GET"])
+@require_auth
 def search_logs():
     """
     Search through parsed log chunks.
@@ -99,6 +101,7 @@ def search_logs():
 
 
 @search_bp.route("/filters", methods=["GET"])
+@require_auth
 def get_search_filters():
     """
     Get available filter options for a session.
@@ -141,6 +144,7 @@ def get_search_filters():
 
 
 @search_bp.route("/chunk/<chunk_id>", methods=["GET"])
+@require_auth
 def get_chunk_detail(chunk_id):
     """
     Get full details of a specific chunk.

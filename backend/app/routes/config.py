@@ -7,6 +7,7 @@ import json
 import requests
 
 from app.services.llm_providers import ProviderFactory
+from app.routes.auth import require_auth, require_permission
 
 
 config_bp = Blueprint("config", __name__)
@@ -31,6 +32,7 @@ def _get_processing_settings() -> dict:
         "enable_hybrid_search": True,
         "enable_query_expansion": True,
         "embedding_model": "BAAI/bge-small-en-v1.5",  # Fast default
+        "auto_embed": False,  # Skip GPU embeddings by default — queries use BM25 keyword search
     }
     
     if SETTINGS_FILE.exists():
@@ -64,6 +66,7 @@ def _save_processing_settings(settings: dict) -> None:
 # ===== Processing Settings =====
 
 @config_bp.route("/settings/processing", methods=["GET"])
+@require_auth
 def get_processing_settings():
     """Get processing settings (file limits, RAG settings, etc.)."""
     try:
@@ -77,6 +80,7 @@ def get_processing_settings():
 
 
 @config_bp.route("/settings/processing", methods=["PUT"])
+@require_permission("manage_settings")
 def update_processing_settings():
     """Update processing settings."""
     data = request.get_json()
@@ -128,6 +132,7 @@ def update_processing_settings():
 # ===== LLM Provider Configuration =====
 
 @config_bp.route("/providers", methods=["GET"])
+@require_auth
 def list_providers():
     """
     List all available LLM providers with their status.
@@ -151,6 +156,7 @@ def list_providers():
 
 
 @config_bp.route("/providers/<provider_type>", methods=["GET"])
+@require_auth
 def get_provider_config(provider_type: str):
     """Get configuration for a specific provider."""
     try:
@@ -178,6 +184,7 @@ def get_provider_config(provider_type: str):
 
 
 @config_bp.route("/providers/<provider_type>", methods=["PUT"])
+@require_permission("manage_settings")
 def update_provider_config(provider_type: str):
     """Update configuration for a specific provider."""
     data = request.get_json()
@@ -203,6 +210,7 @@ def update_provider_config(provider_type: str):
 
 
 @config_bp.route("/providers/active", methods=["PUT"])
+@require_permission("manage_settings")
 def set_active_provider():
     """Set the active LLM provider."""
     data = request.get_json()
@@ -237,6 +245,7 @@ def set_active_provider():
 
 
 @config_bp.route("/providers/<provider_type>/test", methods=["POST"])
+@require_permission("manage_settings")
 def test_provider(provider_type: str):
     """Test connection to a specific provider."""
     try:
@@ -269,6 +278,7 @@ def test_provider(provider_type: str):
 # ===== Model Selection =====
 
 @config_bp.route("/models", methods=["GET"])
+@require_auth
 def list_models():
     """
     List available models for the current active provider.
@@ -300,6 +310,7 @@ def list_models():
 
 
 @config_bp.route("/models", methods=["PUT"])
+@require_permission("manage_settings")
 def set_model():
     """Set the active LLM model for the current provider."""
     data = request.get_json()
@@ -334,6 +345,7 @@ def set_model():
 # ===== Embedding Provider Configuration =====
 
 @config_bp.route("/embeddings/providers", methods=["GET"])
+@require_auth
 def list_embedding_providers():
     """List all available embedding providers."""
     try:
@@ -352,6 +364,7 @@ def list_embedding_providers():
 
 
 @config_bp.route("/embeddings/providers/<provider_type>", methods=["PUT"])
+@require_permission("manage_settings")
 def update_embedding_provider_config(provider_type: str):
     """Update configuration for a specific embedding provider."""
     data = request.get_json()
@@ -377,6 +390,7 @@ def update_embedding_provider_config(provider_type: str):
 
 
 @config_bp.route("/embeddings/providers/active", methods=["PUT"])
+@require_permission("manage_settings")
 def set_active_embedding_provider():
     """Set the active embedding provider."""
     data = request.get_json()
@@ -411,6 +425,7 @@ def set_active_embedding_provider():
 
 
 @config_bp.route("/embeddings/models", methods=["GET"])
+@require_auth
 def list_embedding_models():
     """List available embedding models for the current provider."""
     try:
@@ -441,6 +456,7 @@ def list_embedding_models():
 
 
 @config_bp.route("/embeddings/local/models", methods=["GET"])
+@require_auth
 def list_local_embedding_models():
     """List available local embedding models (sentence-transformers)."""
     try:
@@ -468,6 +484,7 @@ def list_local_embedding_models():
 
 
 @config_bp.route("/embeddings/local/reload", methods=["POST"])
+@require_permission("manage_settings")
 def reload_local_embedding_model():
     """Reload the local embedding model (after changing settings)."""
     try:
@@ -495,6 +512,7 @@ def reload_local_embedding_model():
 # ===== Full Configuration =====
 
 @config_bp.route("/all", methods=["GET"])
+@require_auth
 def get_full_config():
     """
     Get full configuration (providers, models, settings).
@@ -531,6 +549,7 @@ def get_full_config():
 # ===== Legacy Ollama endpoint for backwards compatibility =====
 
 @config_bp.route("/ollama", methods=["GET"])
+@require_auth
 def get_ollama_config():
     """Get Ollama configuration (legacy endpoint)."""
     try:
@@ -595,6 +614,7 @@ def _apply_integration_to_app(settings: dict) -> None:
 
 
 @config_bp.route("/settings/integrations", methods=["GET"])
+@require_auth
 def get_integration_settings():
     """Get integration settings (Sheetstorm, etc.)."""
     try:
@@ -614,6 +634,7 @@ def get_integration_settings():
 
 
 @config_bp.route("/settings/integrations", methods=["PUT"])
+@require_permission("manage_settings")
 def update_integration_settings():
     """Update integration settings."""
     data = request.get_json()
@@ -640,6 +661,7 @@ def update_integration_settings():
 
 
 @config_bp.route("/settings/integrations/test", methods=["POST"])
+@require_permission("manage_settings")
 def test_integration():
     """Test Sheetstorm integration connectivity."""
     try:
@@ -651,3 +673,138 @@ def test_integration():
         return jsonify({"success": True, "message": "Successfully connected to Sheetstorm"})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
+
+
+# ===== General / Application Settings =====
+
+# Settings that map to ENV variables / Flask config
+GENERAL_SETTINGS_SCHEMA = {
+    "base_url": {
+        "label": "Base URL",
+        "description": "Public URL of this server (used for agent bootstrap scripts)",
+        "type": "string",
+        "config_key": "BASE_URL",
+    },
+    "data_retention_days": {
+        "label": "Data Retention (days)",
+        "description": "Number of days to keep data before auto-cleanup (0 = never)",
+        "type": "int",
+        "config_key": "DATA_RETENTION_DAYS",
+    },
+    "max_storage_gb": {
+        "label": "Max Storage (GB)",
+        "description": "Maximum storage in GB before oldest data is cleaned up",
+        "type": "float",
+        "config_key": "MAX_STORAGE_GB",
+    },
+    "cleanup_extracted_after_parse": {
+        "label": "Cleanup Extracted Files After Parse",
+        "description": "Automatically delete extracted archive files after parsing completes",
+        "type": "bool",
+        "config_key": "CLEANUP_EXTRACTED_AFTER_PARSE",
+    },
+    "cors_origins": {
+        "label": "CORS Origins",
+        "description": "Allowed CORS origins (comma-separated URLs)",
+        "type": "string",
+        "config_key": "CORS_ORIGINS",
+    },
+    "auth_provider": {
+        "label": "Auth Provider",
+        "description": "Authentication provider: 'local' or 'supabase'",
+        "type": "string",
+        "config_key": "AUTH_PROVIDER",
+        "read_only": True,
+    },
+}
+
+
+def _get_general_settings() -> dict:
+    """Read general settings from the settings file + current Flask config."""
+    saved = {}
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, "r") as f:
+                saved = json.load(f).get("general", {})
+        except Exception:
+            pass
+
+    result = {}
+    for key, schema in GENERAL_SETTINGS_SCHEMA.items():
+        config_key = schema["config_key"]
+
+        # Prefer saved value, fall back to current Flask config
+        if key in saved:
+            result[key] = saved[key]
+        else:
+            val = current_app.config.get(config_key, "")
+            if isinstance(val, list):
+                val = ", ".join(val)
+            result[key] = val
+
+    return result
+
+
+def _save_general_settings(settings: dict) -> None:
+    """Save general settings to settings file and apply to running app."""
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    existing = {}
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, "r") as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+
+    existing["general"] = settings
+
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(existing, f, indent=2)
+
+    # Apply to running Flask config
+    for key, schema in GENERAL_SETTINGS_SCHEMA.items():
+        if key in settings and not schema.get("read_only"):
+            config_key = schema["config_key"]
+            val = settings[key]
+            if schema["type"] == "int":
+                val = int(val)
+            elif schema["type"] == "float":
+                val = float(val)
+            elif schema["type"] == "bool":
+                val = val if isinstance(val, bool) else str(val).lower() == "true"
+            elif config_key == "CORS_ORIGINS":
+                val = [s.strip() for s in str(val).split(",") if s.strip()]
+            current_app.config[config_key] = val
+
+
+@config_bp.route("/settings/general", methods=["GET"])
+@require_auth
+def get_general_settings():
+    """Get general application settings."""
+    try:
+        settings = _get_general_settings()
+        schema = {k: {kk: vv for kk, vv in v.items() if kk != "config_key"}
+                  for k, v in GENERAL_SETTINGS_SCHEMA.items()}
+        return jsonify({"settings": settings, "schema": schema})
+    except Exception as e:
+        return jsonify({"error": "settings_error", "message": str(e)}), 500
+
+
+@config_bp.route("/settings/general", methods=["PUT"])
+@require_permission("manage_settings")
+def update_general_settings():
+    """Update general application settings."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "missing_data", "message": "Request body is required"}), 400
+
+    try:
+        current = _get_general_settings()
+        for key, schema in GENERAL_SETTINGS_SCHEMA.items():
+            if key in data and not schema.get("read_only"):
+                current[key] = data[key]
+        _save_general_settings(current)
+        return jsonify({"message": "General settings updated", "settings": current})
+    except Exception as e:
+        return jsonify({"error": "update_error", "message": str(e)}), 500

@@ -19,6 +19,7 @@ import tarfile
 import zipfile
 import hashlib
 import logging
+import threading
 from pathlib import Path
 from typing import Any, Callable
 from datetime import datetime
@@ -55,7 +56,8 @@ class ParserService:
         )
     
     def parse(self, file_path: Path, session_id: str, investigation_id: int,
-              progress_callback: ProgressCallback | None = None) -> dict[str, Any]:
+              progress_callback: ProgressCallback | None = None,
+              cancel_event: threading.Event | None = None) -> dict[str, Any]:
         """
         Parse a UAC archive file and ingest into tiered storage.
         
@@ -64,20 +66,26 @@ class ParserService:
             session_id: Unique session identifier (UUID)
             investigation_id: ID of the owning investigation
             progress_callback: Optional callback for progress updates (step, percent, detail)
+            cancel_event: Optional threading.Event; when set, parsing is cancelled.
             
         Returns:
             Parsing result with summary and preview
         """
+        def check_cancelled():
+            if cancel_event and cancel_event.is_set():
+                raise RuntimeError("Parsing cancelled by user")
         def report(step: str, progress: int, detail: str = ""):
             if progress_callback:
                 progress_callback(step, progress, detail)
         
         report("init", 0, "Initializing...")
+        check_cancelled()
         
         # Calculate file hash for deduplication
         report("hash", 5, "Calculating file hash...")
         file_hash = self._calculate_file_hash(file_path)
         file_size = file_path.stat().st_size
+        check_cancelled()
         
         # Create database session record
         report("database", 10, "Creating session record...")
@@ -108,6 +116,7 @@ class ParserService:
                 raise ValueError(f"Unsupported archive format: {file_path.suffix}")
             
             session.extract_path = str(extract_dir)
+            check_cancelled()
             
             report("sysinfo", 25, "Extracting system information...")
             # Extract system info from UAC
@@ -120,11 +129,13 @@ class ParserService:
             # Parse artifacts for summary
             artifacts = self._parse_artifacts(extract_dir)
             session.total_artifacts = len(artifacts)
+            check_cancelled()
             
             # Parse hash executables if present
             report("hashes", 33, "Parsing file hashes...")
             db.session.commit()  # commit session first to get session.id
             hash_count = self._parse_hash_executables(extract_dir, session.id)
+            check_cancelled()
             
             report("ingest", 35, f"Indexing {len(artifacts)} files for RAG...")
             # Ingest into tiered RAG storage (expensive operation - done once)
@@ -155,8 +166,9 @@ class ParserService:
             # Rollback any pending transaction before updating status
             db.session.rollback()
             
-            # Update session with error status
-            session.status = "failed"
+            # Distinguish cancellation from real errors
+            cancelled = cancel_event and cancel_event.is_set()
+            session.status = "cancelled" if cancelled else "failed"
             session.error_message = str(e)
             db.session.commit()
             raise

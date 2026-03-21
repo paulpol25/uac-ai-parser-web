@@ -6,7 +6,11 @@ import json
 
 from app.services.analyzer_service import AnalyzerService
 from app.services.agentic_rag_service import AgenticRAGService
-from app.models import Session
+from app.models import Session, db
+from app.routes.auth import require_auth
+import logging
+
+logger = logging.getLogger(__name__)
 
 analyze_bp = Blueprint("analyze", __name__)
 
@@ -29,6 +33,7 @@ def get_analyzer() -> AnalyzerService:
 
 
 @analyze_bp.route("/query", methods=["POST"])
+@require_auth
 def query():
     """
     Submit a natural language query for AI analysis.
@@ -87,6 +92,7 @@ def query():
 
 
 @analyze_bp.route("/query/agent", methods=["POST"])
+@require_auth
 def query_agent():
     """
     Submit a query for AI analysis using agentic RAG.
@@ -159,6 +165,7 @@ def query_agent():
 
 
 @analyze_bp.route("/summary", methods=["GET"])
+@require_auth
 def get_summary():
     """Generate an incident summary for the session."""
     session_id = request.args.get("session_id")
@@ -186,6 +193,7 @@ def get_summary():
 
 
 @analyze_bp.route("/anomalies", methods=["GET"])
+@require_auth
 def detect_anomalies():
     """Detect and score anomalies in the forensic data."""
     session_id = request.args.get("session_id")
@@ -213,6 +221,7 @@ def detect_anomalies():
 
 
 @analyze_bp.route("/context-preview", methods=["POST"])
+@require_auth
 def preview_context():
     """
     Preview what context/chunks would be retrieved for a query.
@@ -285,6 +294,7 @@ def preview_context():
 
 
 @analyze_bp.route("/session-stats", methods=["GET"])
+@require_auth
 def get_session_stats():
     """Get statistics about a session's indexed data."""
     session_id = request.args.get("session_id")
@@ -308,6 +318,7 @@ def get_session_stats():
 
 
 @analyze_bp.route("/extract-iocs", methods=["GET"])
+@require_auth
 def extract_iocs():
     """
     Extract indicators of compromise (IOCs) from forensic data.
@@ -334,6 +345,7 @@ def extract_iocs():
         }), 500
 
 @analyze_bp.route("/entities", methods=["GET"])
+@require_auth
 def list_entities():
     """
     List extracted entities from a session.
@@ -384,6 +396,7 @@ def list_entities():
 
 
 @analyze_bp.route("/entities/search", methods=["POST"])
+@require_auth
 def search_entities():
     """
     Search for chunks containing a specific entity value.
@@ -436,6 +449,7 @@ def search_entities():
 # ========== Graph RAG Endpoints (Phase 5) ==========
 
 @analyze_bp.route("/graph/neighbors", methods=["POST"])
+@require_auth
 def get_graph_neighbors():
     """
     Get entities connected to a given entity in the relationship graph.
@@ -481,6 +495,7 @@ def get_graph_neighbors():
 
 
 @analyze_bp.route("/graph/path", methods=["POST"])
+@require_auth
 def find_graph_path():
     """
     Find a path between two entities in the relationship graph.
@@ -526,6 +541,7 @@ def find_graph_path():
 
 
 @analyze_bp.route("/graph/stats", methods=["GET"])
+@require_auth
 def get_graph_stats():
     """
     Get statistics about the entity relationship graph.
@@ -555,6 +571,7 @@ def get_graph_stats():
 
 
 @analyze_bp.route("/graph/kill-chain", methods=["GET"])
+@require_auth
 def get_kill_chain():
     """
     Analyze the entity graph to reconstruct potential attack stages.
@@ -589,6 +606,7 @@ def get_kill_chain():
 _suggestions_cache: dict = {}
 
 @analyze_bp.route("/suggestions", methods=["GET"])
+@require_auth
 def get_suggestions():
     """
     Generate AI-powered question suggestions based on session data.
@@ -737,6 +755,7 @@ Return ONLY the 6 questions, one per line, no numbering or bullets."""
 # ========== Relevance Feedback Endpoints (Phase 6) ==========
 
 @analyze_bp.route("/relevance/stats", methods=["GET"])
+@require_auth
 def get_relevance_stats():
     """
     Get relevance feedback statistics for a session.
@@ -770,6 +789,7 @@ def get_relevance_stats():
 # ========== MITRE ATT&CK Endpoints ==========
 
 @analyze_bp.route("/mitre/scan", methods=["POST"])
+@require_auth
 def mitre_scan():
     """
     Scan a session for MITRE ATT&CK technique indicators.
@@ -796,6 +816,7 @@ def mitre_scan():
 
 
 @analyze_bp.route("/mitre/mappings", methods=["GET"])
+@require_auth
 def mitre_mappings():
     """Get MITRE mappings for a session."""
     from app.services.mitre_service import MitreService
@@ -813,6 +834,7 @@ def mitre_mappings():
 
 
 @analyze_bp.route("/mitre/summary", methods=["GET"])
+@require_auth
 def mitre_summary():
     """Get MITRE ATT&CK summary grouped by tactic for a session."""
     from app.services.mitre_service import MitreService
@@ -832,6 +854,7 @@ def mitre_summary():
 # ========== IOC Endpoints ==========
 
 @analyze_bp.route("/iocs/extract", methods=["POST"])
+@require_auth
 def iocs_extract():
     """
     Extract IOCs from entities for a session and correlate across investigation.
@@ -850,11 +873,18 @@ def iocs_extract():
         return jsonify({"error": "session_not_found"}), 404
 
     svc = IOCService()
-    count = svc.extract_iocs_for_session(resolved_id)
+    try:
+        count = svc.extract_iocs_for_session(resolved_id)
+    except Exception as e:
+        logger.error(f"IOC extraction failed for session {resolved_id}: {e}")
+        db.session.rollback()
+        db.session.remove()
+        return jsonify({"error": "ioc_extraction_failed", "detail": str(e)}), 500
     return jsonify({"new_iocs": count})
 
 
 @analyze_bp.route("/iocs/correlate", methods=["GET"])
+@require_auth
 def iocs_correlate():
     """
     Correlate IOCs across sessions in an investigation.
@@ -872,6 +902,7 @@ def iocs_correlate():
 
 
 @analyze_bp.route("/iocs/summary", methods=["GET"])
+@require_auth
 def iocs_summary():
     """Get IOC summary for an investigation."""
     from app.services.ioc_service import IOCService
@@ -885,6 +916,7 @@ def iocs_summary():
 
 
 @analyze_bp.route("/iocs/search", methods=["POST"])
+@require_auth
 def iocs_search():
     """
     Search for a specific IOC value.
@@ -909,6 +941,7 @@ def iocs_search():
 # ========== Hash Endpoints ==========
 
 @analyze_bp.route("/hashes", methods=["GET"])
+@require_auth
 def get_hashes():
     """
     Get file hashes for a session.
@@ -931,6 +964,7 @@ def get_hashes():
 
 
 @analyze_bp.route("/hashes/compare", methods=["POST"])
+@require_auth
 def compare_hashes():
     """
     Compare file hashes between two sessions.
@@ -948,6 +982,7 @@ def compare_hashes():
 
 
 @analyze_bp.route("/hashes/search", methods=["POST"])
+@require_auth
 def search_hash():
     """
     Search for a specific hash value across an investigation.
@@ -965,6 +1000,7 @@ def search_hash():
 
 
 @analyze_bp.route("/hashes/mark-known-good", methods=["POST"])
+@require_auth
 def mark_known_good():
     """
     Mark file hashes as known-good baseline.
@@ -985,6 +1021,7 @@ def mark_known_good():
 # ========== Session Comparison Endpoints ==========
 
 @analyze_bp.route("/compare", methods=["POST"])
+@require_auth
 def compare_sessions():
     """
     Compare two sessions across all dimensions.

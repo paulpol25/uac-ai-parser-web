@@ -38,6 +38,34 @@ from .embedding_service import get_embedding_service
 
 logger = logging.getLogger(__name__)
 
+
+# ------------------------------------------------------------------ #
+#   Module-level ChromaDB singleton + factory
+# ------------------------------------------------------------------ #
+_chroma_client = None
+_chroma_settings = Settings(anonymized_telemetry=False)
+
+
+def get_chroma_client(persist_dir=None):
+    """Return the process-wide ChromaDB PersistentClient singleton."""
+    global _chroma_client
+    if _chroma_client is None:
+        if persist_dir is None:
+            from flask import current_app
+            persist_dir = current_app.config.get("CHROMA_PERSIST_DIR", "chroma_db")
+        path = str(persist_dir)
+        Path(path).mkdir(parents=True, exist_ok=True)
+        _chroma_client = chromadb.PersistentClient(path=path, settings=_chroma_settings)
+    return _chroma_client
+
+
+def get_tiered_rag_service():
+    """Return a TieredRAGService backed by the shared ChromaDB client."""
+    from flask import current_app
+    return TieredRAGService(
+        chroma_persist_dir=current_app.config.get("CHROMA_PERSIST_DIR", Path.home() / ".uac-ai" / "chroma")
+    )
+
 try:
     from rank_bm25 import BM25Okapi
     HAS_BM25 = True
@@ -256,11 +284,7 @@ class TieredRAGService:
         
         # Initialize Tier 2 (Vector Index)
         if TieredRAGService._chroma_client is None:
-            chroma_persist_dir.mkdir(parents=True, exist_ok=True)
-            TieredRAGService._chroma_client = chromadb.PersistentClient(
-                path=str(chroma_persist_dir),
-                settings=Settings(anonymized_telemetry=False)
-            )
+            TieredRAGService._chroma_client = get_chroma_client(chroma_persist_dir)
         self.chroma = TieredRAGService._chroma_client
         
         # Initialize Tier 3 (Hot Cache)
@@ -703,7 +727,24 @@ class TieredRAGService:
         session.status = "searchable"  # Timeline and search now work
         db.session.commit()
         
-        report("searchable", 76, "Timeline and search ready! Starting AI embeddings in background...")
+        report("searchable", 76, "Timeline and search ready!")
+        
+        # Check if auto-embedding is enabled
+        from app.routes.config import _get_processing_settings
+        auto_embed = _get_processing_settings().get("auto_embed", False)
+        
+        if not auto_embed:
+            # Skip GPU embeddings — session stays "searchable" and queries use BM25
+            logger.info(f"⏭️ Auto-embed disabled — session {session.session_id} stays searchable (BM25 only)")
+            session.status = "ready"
+            db.session.commit()
+            report("finalize", 95, "Session ready for queries!")
+            report("complete", 100, "Complete!")
+            session.total_chunks = stats["chunks_created"]
+            db.session.commit()
+            return stats
+        
+        report("searchable_embed", 77, "Starting AI embeddings in background...")
         
         # Run embeddings + graph building on a REAL native OS thread.
         # gevent's monkey.patch_all() turns threading.Thread into greenlets
@@ -800,6 +841,7 @@ class TieredRAGService:
                     
                     # Mark session as fully ready
                     bg_session.status = "ready"
+                    bg_session.has_embeddings = True
                     db.session.commit()
                     logger.info(f"✅ [BG] Session {session_id_for_bg} embeddings + graph complete")
                     

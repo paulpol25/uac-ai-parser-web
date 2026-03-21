@@ -54,6 +54,9 @@ class SupabaseAuthProvider(BaseAuthProvider):
                 email=email,
                 password_hash=f"supabase:{sub}",  # Not a real hash, marks as Supabase user
             )
+            # First user ever registered becomes admin
+            if User.query.count() == 0:
+                user.role = "admin"
             db.session.add(user)
         
         user.last_login = datetime.utcnow()

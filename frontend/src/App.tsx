@@ -12,6 +12,8 @@ import { Export } from "@/pages/Export";
 import { Settings } from "@/pages/Settings";
 import { Analysis } from "@/pages/Analysis";
 import { Agents } from "@/pages/Agents";
+import { YaraRules } from "@/pages/YaraRules";
+import { Documentation } from "@/pages/Documentation";
 import { useAuthStore } from "@/stores/authStore";
 
 export default function App() {
@@ -40,6 +42,8 @@ export default function App() {
           <Route path="export" element={<Export />} />
           <Route path="analysis" element={<Analysis />} />
           <Route path="agents" element={<Agents />} />
+          <Route path="yara-rules" element={<YaraRules />} />
+          <Route path="docs" element={<Documentation />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

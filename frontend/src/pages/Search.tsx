@@ -24,6 +24,7 @@ import { useInvestigationStore } from "@/stores/investigationStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { getInvestigation } from "@/services/api";
 import { useFocusShortcut } from "@/hooks/useKeyboardShortcuts";
+import { getAuthHeader } from "@/stores/authStore";
 
 const API_BASE = "/api/v1";
 
@@ -70,7 +71,7 @@ async function searchLogs(
   params.set("per_page", String(perPage));
   
   const response = await fetch(`${API_BASE}/search?${params.toString()}`, {
-    credentials: "include",
+    headers: getAuthHeader(),
   });
   
   if (!response.ok) {
@@ -82,7 +83,7 @@ async function searchLogs(
 
 async function getSearchFilters(sessionId: string): Promise<FilterOptions> {
   const response = await fetch(`${API_BASE}/search/filters?session_id=${sessionId}`, {
-    credentials: "include",
+    headers: getAuthHeader(),
   });
   
   if (!response.ok) {

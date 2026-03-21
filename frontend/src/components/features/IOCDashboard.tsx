@@ -6,7 +6,7 @@
  */
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Fingerprint, RefreshCw, Search, AlertTriangle, Globe, Server, Hash, Mail, MapPin, Info } from "lucide-react";
+import { Fingerprint, RefreshCw, Search, AlertTriangle, Globe, Server, Hash, Mail, MapPin, Info, XCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { getIOCSummary, getIOCCorrelation, iocExtract, searchIOCs } from "@/services/api";
 
@@ -69,7 +69,11 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
   });
 
   const extractMutation = useMutation({
-    mutationFn: (sessionId: string) => iocExtract(sessionId),
+    mutationFn: async (sids: string[]) => {
+      for (const sid of sids) {
+        await iocExtract(sid);
+      }
+    },
     onSuccess: () => {
       setExtracted(true);
       queryClient.invalidateQueries({ queryKey: ["ioc-summary", investigationId] });
@@ -78,7 +82,7 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
   });
 
   const extractAll = () => {
-    sessionIds.forEach((sid) => extractMutation.mutate(sid));
+    extractMutation.mutate(sessionIds);
   };
 
   const allIOCs = useMemo(() => {
@@ -168,6 +172,13 @@ export function IOCDashboard({ investigationId, sessionIds }: Props) {
 
         <span className="text-xs text-text-muted ml-auto">{filteredIOCs.length} results</span>
       </div>
+
+      {extractMutation.isError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          <XCircle className="h-3.5 w-3.5 shrink-0" />
+          IOC extraction failed. Please try again.
+        </div>
+      )}
 
       {/* Cross-session highlight */}
       {correlation && (correlation.cross_session_iocs?.length ?? 0) > 0 && searchText.length < 3 && (

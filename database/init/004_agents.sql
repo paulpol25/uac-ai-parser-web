@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS agent_commands (
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     CONSTRAINT chk_command_type CHECK (command_type IN (
-        'run_uac', 'exec_command', 'collect_file', 'run_check', 'shutdown'
+        'run_uac', 'exec_command', 'collect_file', 'run_check', 'shutdown',
+        'collect_logs', 'hash_files', 'persistence_check', 'network_capture',
+        'filesystem_timeline', 'docker_inspect', 'yara_scan', 'memory_dump'
     )),
     CONSTRAINT chk_command_status CHECK (status IN (
         'pending', 'running', 'completed', 'failed', 'cancelled'

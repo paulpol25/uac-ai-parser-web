@@ -72,7 +72,7 @@ class LocalAuthProvider(BaseAuthProvider):
         if not auth_token:
             return None
         
-        if datetime.utcnow() > auth_token.expires_at:
+        if not auth_token.expires_at or datetime.utcnow() > auth_token.expires_at:
             db.session.delete(auth_token)
             db.session.commit()
             return None
@@ -117,6 +117,9 @@ class LocalAuthProvider(BaseAuthProvider):
             email=email.lower(),
             password_hash=self.hash_password(password),
         )
+        # First user ever registered becomes admin
+        if User.query.count() == 0:
+            user.role = "admin"
         db.session.add(user)
         db.session.commit()
         

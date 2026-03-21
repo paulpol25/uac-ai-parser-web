@@ -4,11 +4,13 @@ Timeline endpoints for generating and retrieving forensic timelines.
 from flask import Blueprint, request, jsonify, current_app
 
 from app.services.timeline_service import TimelineService
+from app.routes.auth import require_auth
 
 timeline_bp = Blueprint("timeline", __name__)
 
 
 @timeline_bp.route("", methods=["GET"])
+@require_auth
 def get_timeline():
     """
     Get timeline data using internal parser.
@@ -55,6 +57,7 @@ def get_timeline():
 
 
 @timeline_bp.route("/plaso", methods=["POST"])
+@require_auth
 def trigger_plaso():
     """
     Trigger Plaso timeline generation (requires Docker).
@@ -93,6 +96,7 @@ def trigger_plaso():
 
 
 @timeline_bp.route("/plaso/status", methods=["GET"])
+@require_auth
 def get_plaso_status():
     """Check Plaso job status."""
     job_id = request.args.get("job_id")
@@ -116,6 +120,7 @@ def get_plaso_status():
 
 
 @timeline_bp.route("/stats", methods=["GET"])
+@require_auth
 def get_timeline_stats():
     """
     Get timeline statistics: event frequency by hour/day, event type distribution.
@@ -134,6 +139,7 @@ def get_timeline_stats():
 
 
 @timeline_bp.route("/correlate", methods=["GET"])
+@require_auth
 def correlate_events():
     """
     Correlate events within time windows for attack chain detection.

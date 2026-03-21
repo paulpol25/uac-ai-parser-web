@@ -3,40 +3,23 @@ Chat management endpoints.
 
 Handles CRUD operations for chat conversations and messages.
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from datetime import datetime
 import json
 
 from app.models import db, Chat, ChatMessage, Session, User
-from app.services.auth_providers import get_auth_provider
+from app.routes.auth import require_auth
 
 chats_bp = Blueprint("chats", __name__)
 
 
 def get_current_user_id() -> int:
-    """Get current user ID from auth token or use default user."""
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        provider = get_auth_provider()
-        user = provider.verify_token(token)
-        if user:
-            return user.id
-    
-    # Fall back to default user
-    user = User.query.filter_by(username="default").first()
-    if not user:
-        user = User(
-            username="default",
-            email="default@local",
-            password_hash="not-implemented"
-        )
-        db.session.add(user)
-        db.session.commit()
-    return user.id
+    """Get current user ID from g.current_user set by @require_auth."""
+    return g.current_user.id
 
 
 @chats_bp.route("", methods=["GET"])
+@require_auth
 def list_chats():
     """
     List all chats for a session.
@@ -83,6 +66,7 @@ def list_chats():
 
 
 @chats_bp.route("", methods=["POST"])
+@require_auth
 def create_chat():
     """
     Create a new chat for a session.
@@ -129,6 +113,7 @@ def create_chat():
 
 
 @chats_bp.route("/<int:chat_id>", methods=["GET"])
+@require_auth
 def get_chat(chat_id: int):
     """
     Get a chat with all its messages.
@@ -175,6 +160,7 @@ def get_chat(chat_id: int):
 
 
 @chats_bp.route("/<int:chat_id>", methods=["PATCH"])
+@require_auth
 def update_chat(chat_id: int):
     """
     Update chat metadata (title).
@@ -208,6 +194,7 @@ def update_chat(chat_id: int):
 
 
 @chats_bp.route("/<int:chat_id>", methods=["DELETE"])
+@require_auth
 def delete_chat(chat_id: int):
     """
     Delete a chat (soft delete).
@@ -238,6 +225,7 @@ def delete_chat(chat_id: int):
 
 
 @chats_bp.route("/<int:chat_id>/messages", methods=["POST"])
+@require_auth
 def add_message(chat_id: int):
     """
     Add a message to a chat.
@@ -307,6 +295,7 @@ def add_message(chat_id: int):
 
 
 @chats_bp.route("/<int:chat_id>/messages", methods=["GET"])
+@require_auth
 def get_messages(chat_id: int):
     """
     Get all messages for a chat (for conversation history).

@@ -5,6 +5,7 @@ Environment-specific configuration classes using the app factory pattern.
 """
 import os
 from pathlib import Path
+from sqlalchemy.pool import NullPool
 
 
 class BaseConfig:
@@ -19,7 +20,7 @@ class BaseConfig:
     SQLALCHEMY_DATABASE_URI = DATABASE_URL if DATABASE_URL else f"sqlite:///{DATABASE_PATH}"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # Engine options: PostgreSQL pool vs SQLite pragmas
+    # Engine options: PostgreSQL pool vs SQLite (NullPool to avoid locking)
     _db_url = os.environ.get("DATABASE_URL", "")
     SQLALCHEMY_ENGINE_OPTIONS = (
         {
@@ -34,7 +35,7 @@ class BaseConfig:
                 "timeout": 30,
                 "check_same_thread": False,
             },
-            "pool_pre_ping": True,
+            "poolclass": NullPool,
         }
     )
     

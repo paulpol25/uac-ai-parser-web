@@ -1297,8 +1297,10 @@ PARAMS: {{"answer": "Your complete answer here"}}
                 error_msg = str(e)
                 if "429" in error_msg or "rate" in error_msg.lower() or "quota" in error_msg.lower():
                     yield "⚠️ LLM rate limit exceeded. Please wait a minute and try again.\n"
+                elif "404" in error_msg or "not found" in error_msg.lower():
+                    yield f"⚠️ LLM model not found. Please check your model configuration in Settings. Error: {error_msg}\n"
                 else:
-                    yield f"Error communicating with LLM: {error_msg}\n"
+                    yield f"⚠️ Error communicating with LLM: {error_msg}\n"
                 break
             
             # Parse response
@@ -1375,7 +1377,7 @@ Answer:"""
                         yield f"Based on the investigation, {len(tool_history)} searches were performed but a final summary could not be generated. "
                         yield "Please review the investigation steps above for details, or try rephrasing your question."
             else:
-                yield "No investigation results were gathered. Please try a different question."
+                yield "No investigation results were gathered — the LLM could not be reached or the configured model is unavailable. Please verify your LLM provider settings (model name, API key, endpoint) in Settings."
         
         elapsed = time.time() - start_time
         yield f"\n\n---\n*Investigation completed in {elapsed:.1f}s ({iteration} steps)*"

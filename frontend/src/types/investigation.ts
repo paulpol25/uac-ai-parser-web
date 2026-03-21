@@ -22,8 +22,9 @@ export interface InvestigationSession {
   os_type: string | null;
   total_artifacts: number;
   total_chunks: number;
-  status: "processing" | "searchable" | "ready" | "error" | "failed";
+  status: "processing" | "searchable" | "ready" | "error" | "failed" | "cancelled";
   parsed_at: string | null;
+  has_embeddings: boolean;
 }
 
 export interface InvestigationDetail extends Omit<Investigation, 'session_count' | 'query_count'> {

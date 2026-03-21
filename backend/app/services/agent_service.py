@@ -15,7 +15,7 @@ from typing import Any
 import gevent
 from flask import current_app
 
-from app.models import db, Agent, AgentCommand, AgentEvent, Investigation
+from app.models import db, Agent, AgentCommand, AgentEvent, Investigation, Playbook
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,11 @@ class AgentService:
     #   Command dispatch
     # ------------------------------------------------------------------ #
 
-    VALID_COMMAND_TYPES = {"run_uac", "exec_command", "collect_file", "run_check", "shutdown"}
+    VALID_COMMAND_TYPES = {
+        "run_uac", "exec_command", "collect_file", "run_check", "shutdown",
+        "collect_logs", "hash_files", "persistence_check", "network_capture",
+        "filesystem_timeline", "docker_inspect", "yara_scan", "memory_dump",
+    }
 
     def dispatch_command(
         self,
@@ -243,6 +247,115 @@ class AgentService:
         if status:
             query = query.filter_by(status=status)
         return [_serialize_command(c) for c in query.order_by(AgentCommand.created_at.desc()).all()]
+
+    def batch_dispatch(
+        self,
+        agent_id: str,
+        commands: list[dict],
+    ) -> list[dict]:
+        """Queue multiple commands for an agent at once."""
+        results = []
+        for cmd_spec in commands:
+            command_type = cmd_spec.get("type")
+            payload = cmd_spec.get("payload", {})
+            result = self.dispatch_command(agent_id, command_type, payload)
+            results.append(result)
+        return results
+
+    def cancel_command(self, command_id: str) -> bool:
+        """Cancel a pending command (won't stop already-running ones server-side)."""
+        cmd = db.session.get(AgentCommand, command_id)
+        if not cmd:
+            return False
+        if cmd.status not in ("pending", "running"):
+            return False
+        cmd.status = "cancelled"
+        cmd.completed_at = datetime.utcnow()
+        _log_event(cmd.agent_id, "command_cancelled", {"command_id": command_id})
+        db.session.commit()
+        return True
+
+    # Built-in playbook definitions (seeded into DB on startup)
+    BUILTIN_PLAYBOOKS = {
+        "full_triage": {
+            "description": "Full forensic triage: processes, connections, users, crontabs, services, login logs, persistence, and UAC collection",
+            "commands": [
+                {"type": "run_check", "payload": {"check": "processes"}},
+                {"type": "run_check", "payload": {"check": "connections"}},
+                {"type": "run_check", "payload": {"check": "users"}},
+                {"type": "run_check", "payload": {"check": "crontabs"}},
+                {"type": "run_check", "payload": {"check": "services"}},
+                {"type": "run_check", "payload": {"check": "login_logs"}},
+                {"type": "persistence_check", "payload": {}},
+                {"type": "run_uac", "payload": {"profile": "ir_triage"}},
+            ],
+        },
+        "quick_check": {
+            "description": "Quick health check: processes, connections, and users",
+            "commands": [
+                {"type": "run_check", "payload": {"check": "processes"}},
+                {"type": "run_check", "payload": {"check": "connections"}},
+                {"type": "run_check", "payload": {"check": "users"}},
+            ],
+        },
+        "persistence_hunt": {
+            "description": "Hunt for persistence mechanisms: crontabs, services, SSH keys",
+            "commands": [
+                {"type": "persistence_check", "payload": {}},
+                {"type": "run_check", "payload": {"check": "crontabs"}},
+                {"type": "run_check", "payload": {"check": "services"}},
+                {"type": "run_check", "payload": {"check": "ssh_keys"}},
+            ],
+        },
+        "network_analysis": {
+            "description": "Network reconnaissance: connections, firewall, DNS cache, packet capture",
+            "commands": [
+                {"type": "run_check", "payload": {"check": "connections"}},
+                {"type": "run_check", "payload": {"check": "firewall"}},
+                {"type": "run_check", "payload": {"check": "dns_cache"}},
+                {"type": "network_capture", "payload": {"duration": 30}},
+            ],
+        },
+        "malware_hunt": {
+            "description": "Malware hunting: persistence, file hashing, open files, loaded modules",
+            "commands": [
+                {"type": "persistence_check", "payload": {}},
+                {"type": "hash_files", "payload": {"path": "/tmp", "max_files": 200}},
+                {"type": "hash_files", "payload": {"path": "/var/tmp", "max_files": 200}},
+                {"type": "run_check", "payload": {"check": "open_files"}},
+                {"type": "run_check", "payload": {"check": "modules"}},
+            ],
+        },
+    }
+
+    @classmethod
+    def seed_builtin_playbooks(cls):
+        """Ensure all built-in playbooks exist in the database."""
+        for name, definition in cls.BUILTIN_PLAYBOOKS.items():
+            existing = Playbook.query.filter_by(name=name).first()
+            if not existing:
+                pb = Playbook(
+                    name=name,
+                    description=definition["description"],
+                    commands=definition["commands"],
+                    is_builtin=True,
+                )
+                db.session.add(pb)
+        db.session.commit()
+
+    def run_playbook(self, agent_id: str, playbook_name: str) -> dict:
+        """Run a playbook (built-in or custom) on an agent."""
+        playbook = Playbook.query.filter_by(name=playbook_name).first()
+        if not playbook:
+            available = [p.name for p in Playbook.query.all()]
+            raise ValueError(f"Unknown playbook: {playbook_name}. Available: {available}")
+        results = self.batch_dispatch(agent_id, playbook.commands)
+        return {
+            "playbook": playbook_name,
+            "agent_id": agent_id,
+            "commands_dispatched": len(results),
+            "commands": results,
+        }
 
     # ------------------------------------------------------------------ #
     #   Upload handling

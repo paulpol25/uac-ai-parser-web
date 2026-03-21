@@ -33,6 +33,7 @@ import {
 } from "@/services/api";
 import { useInvestigationStore } from "@/stores/investigationStore";
 import { useSessionStore } from "@/stores/sessionStore";
+import { isViewer } from "@/stores/authStore";
 import type { Investigation } from "@/types/investigation";
 
 type ViewMode = "cards" | "list";
@@ -342,15 +343,17 @@ export function Investigations() {
             </button>
           </div>
 
+          {!isViewer() && (
           <button className="flex items-center gap-1 h-8 px-3 text-xs font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => setShowCreateModal(true)}>
             <Plus className="w-3.5 h-3.5" />
             New
           </button>
+          )}
         </div>
       </div>
 
       {/* Batch Actions Bar */}
-      {selectedIds.size > 0 && (
+      {selectedIds.size > 0 && !isViewer() && (
         <div className="flex items-center gap-3 px-3 py-2 bg-bg-surface border border-border-subtle rounded-lg">
           <span className="text-sm text-text-secondary">
             {selectedIds.size} selected
@@ -397,7 +400,7 @@ export function Investigations() {
               <p className="text-text-muted mb-6 max-w-sm mx-auto">
                 Create an investigation to organize your forensic analysis sessions and upload UAC archives.
               </p>
-              <button className="flex items-center gap-2 mx-auto px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => setShowCreateModal(true)}>
+              <button className="flex items-center gap-2 mx-auto px-4 py-2 text-sm font-medium bg-brand-primary text-white rounded-lg hover:bg-brand-primary/90 transition-colors" onClick={() => setShowCreateModal(true)} disabled={isViewer()}>
                 <Plus className="w-4 h-4" />
                 Create your first investigation
               </button>
@@ -498,6 +501,7 @@ export function Investigations() {
                   {new Date(investigation.updated_at).toLocaleDateString()}
                 </span>
                 
+                {!isViewer() && (
                 <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   <button className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors" onClick={() => setEditingInvestigation(investigation)} title="Edit">
                     <Edit2 className="w-4 h-4" />
@@ -526,6 +530,7 @@ export function Investigations() {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
+                )}
               </div>
             );
           })}
@@ -605,6 +610,7 @@ export function Investigations() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {!isViewer() && (<>
                     <button
                       className="p-1.5 text-text-secondary hover:text-text-primary rounded-md hover:bg-bg-hover transition-colors"
                       onClick={(e) => {
@@ -642,6 +648,7 @@ export function Investigations() {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
+                    </>)}
                     <ChevronRight className="w-5 h-5 text-text-muted ml-2" />
                   </div>
                 </div>

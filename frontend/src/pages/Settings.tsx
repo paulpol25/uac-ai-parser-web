@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToastHelpers } from "@/components/ui/Toast";
 import {
   Settings as SettingsIcon,
   Server,
@@ -18,12 +19,17 @@ import {
   Database,
   Search,
   Save,
-  Cpu,
   Info,
   Link2,
+  Users,
+  Shield,
+  Trash2,
+  Edit,
+  Sliders,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/Loader";
 import { Input } from "@/components/ui/Input";
+import type { User, UserRole, OperatorPermissions } from "@/types/auth";
 import {
   listProviders,
   getModels,
@@ -43,8 +49,14 @@ import {
   type ProcessingSettings,
   type IntegrationSettings,
   API_BASE_URL,
+  listUsers,
+  updateUser,
+  deleteUser,
+  listPermissions,
+  getGeneralSettings,
+  updateGeneralSettings,
 } from "@/services/api";
-import { getAuthHeader } from "@/stores/authStore";
+import { getAuthHeader, useAuthStore } from "@/stores/authStore";
 
 interface ModelOption {
   id: string;
@@ -53,7 +65,7 @@ interface ModelOption {
   recommended?: boolean;
 }
 
-type SettingsTab = "providers" | "embeddings" | "advanced" | "storage" | "integrations" | "about";
+type SettingsTab = "ai" | "storage" | "integrations" | "general" | "users" | "about";
 
 // Provider metadata with icon, description, and available models
 const PROVIDER_INFO: Record<string, { 
@@ -117,11 +129,11 @@ const PROVIDER_INFO: Record<string, {
 
 // Tab configuration
 const TABS: { id: SettingsTab; label: string; icon: typeof Brain }[] = [
-  { id: "providers", label: "AI Providers", icon: Brain },
-  { id: "embeddings", label: "Embeddings", icon: Cpu },
-  { id: "advanced", label: "Advanced", icon: HardDrive },
+  { id: "ai", label: "AI", icon: Brain },
   { id: "storage", label: "Storage", icon: Database },
   { id: "integrations", label: "Integrations", icon: Link2 },
+  { id: "general", label: "General", icon: Sliders },
+  { id: "users", label: "Users", icon: Users },
   { id: "about", label: "About", icon: Info },
 ];
 
@@ -139,6 +151,7 @@ interface StorageReport {
 
 function StorageTab() {
   const queryClient = useQueryClient();
+  const toast = useToastHelpers();
   const [confirmCleanup, setConfirmCleanup] = useState(false);
 
   const { data: report, isLoading } = useQuery<StorageReport>({
@@ -156,9 +169,13 @@ function StorageTab() {
       if (!res.ok) throw new Error("Cleanup failed");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["storage-report"] });
       setConfirmCleanup(false);
+      toast.success(`Cleanup complete — ${data?.expired_sessions ?? 0} sessions, ${data?.orphaned_uploads ?? 0} uploads removed`);
+    },
+    onError: () => {
+      toast.error("Cleanup failed");
     },
   });
 
@@ -252,6 +269,7 @@ function StorageTab() {
 
 function IntegrationsTab() {
   const queryClient = useQueryClient();
+  const toast = useToastHelpers();
   const [form, setForm] = useState({
     sheetstorm_url: "",
     sheetstorm_api_token: "",
@@ -306,6 +324,10 @@ function IntegrationsTab() {
       queryClient.invalidateQueries({ queryKey: ["integration-settings"] });
       setDirty(false);
       setLoaded(false);
+      toast.success("Integration settings saved");
+    },
+    onError: () => {
+      toast.error("Failed to save integration settings");
     },
   });
 
@@ -462,9 +484,346 @@ function IntegrationsTab() {
   );
 }
 
+function GeneralTab() {
+  const queryClient = useQueryClient();
+  const toast = useToastHelpers();
+  const { data, isLoading } = useQuery({
+    queryKey: ["general-settings"],
+    queryFn: getGeneralSettings,
+  });
+
+  const [form, setForm] = useState<Record<string, unknown>>({});
+  const [dirty, setDirty] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  if (data && !loaded) {
+    setForm(data.settings);
+    setLoaded(true);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: () => updateGeneralSettings(form),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["general-settings"] });
+      setDirty(false);
+      setLoaded(false);
+      toast.success("Settings saved");
+    },
+    onError: () => {
+      toast.error("Failed to save settings");
+    },
+  });
+
+  const handleChange = (key: string, value: unknown) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Spinner className="w-6 h-6 text-brand-primary" />
+      </div>
+    );
+  }
+
+  const schema = data?.schema ?? {};
+
+  return (
+    <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-border-subtle">
+        <h2 className="font-semibold text-text-primary">General Settings</h2>
+        <p className="text-sm text-text-muted mt-0.5">Application-wide configuration options</p>
+      </div>
+      <div className="p-5 space-y-4">
+        {Object.entries(schema).map(([key, field]) => {
+          const value = form[key] ?? data?.settings[key] ?? "";
+          return (
+            <div key={key}>
+              <label className="block text-sm font-medium text-text-primary mb-1">{field.label}</label>
+              {field.description && (
+                <p className="text-xs text-text-muted mb-1.5">{field.description}</p>
+              )}
+              {field.type === "bool" ? (
+                <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!value}
+                    disabled={field.read_only}
+                    onChange={(e) => handleChange(key, e.target.checked)}
+                    className="w-4 h-4 rounded border-border-subtle bg-bg-elevated text-brand-primary focus:ring-brand-primary"
+                  />
+                  <span className="text-sm text-text-secondary">{value ? "Enabled" : "Disabled"}</span>
+                </label>
+              ) : field.type === "int" ? (
+                <Input
+                  type="number"
+                  value={String(value)}
+                  disabled={field.read_only}
+                  onChange={(e) => handleChange(key, parseInt(e.target.value, 10) || 0)}
+                />
+              ) : field.type === "float" ? (
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={String(value)}
+                  disabled={field.read_only}
+                  onChange={(e) => handleChange(key, parseFloat(e.target.value) || 0)}
+                />
+              ) : (
+                <Input
+                  type="text"
+                  value={String(value)}
+                  disabled={field.read_only}
+                  onChange={(e) => handleChange(key, e.target.value)}
+                />
+              )}
+            </div>
+          );
+        })}
+        {Object.keys(schema).length === 0 && (
+          <p className="text-sm text-text-muted">No settings available.</p>
+        )}
+        <div className="pt-4 border-t border-border-subtle">
+          <button
+            onClick={() => saveMutation.mutate()}
+            disabled={!dirty || saveMutation.isPending}
+            className="px-4 py-2 rounded-lg bg-brand-primary text-white text-sm font-medium hover:bg-brand-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+          >
+            {saveMutation.isPending ? (
+              <Spinner className="w-4 h-4" />
+            ) : saveMutation.isSuccess ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {saveMutation.isSuccess ? "Saved" : "Save Settings"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UsersTab() {
+  const queryClient = useQueryClient();
+  const [editingUser, setEditingUser] = useState<number | null>(null);
+  const [editRole, setEditRole] = useState<UserRole>("viewer");
+  const [editPermissions, setEditPermissions] = useState<OperatorPermissions>({});
+  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [expandedPerms, setExpandedPerms] = useState<number | null>(null);
+
+  const { data: usersData, isLoading: loadingUsers } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: listUsers,
+  });
+
+  const { data: permsData } = useQuery({
+    queryKey: ["permissions"],
+    queryFn: listPermissions,
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (args: { userId: number; data: { role?: string; operator_permissions?: OperatorPermissions } }) =>
+      updateUser(args.userId, args.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      setEditingUser(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      setDeleteConfirm(null);
+    },
+  });
+
+  const startEdit = (u: User) => {
+    setEditingUser(u.id);
+    setEditRole(u.role);
+    setEditPermissions(u.operator_permissions ?? {});
+  };
+
+  const saveEdit = (userId: number) => {
+    updateMutation.mutate({
+      userId,
+      data: {
+        role: editRole,
+        ...(editRole === "operator" ? { operator_permissions: editPermissions } : {}),
+      },
+    });
+  };
+
+  if (loadingUsers) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Spinner className="w-6 h-6 text-brand-primary" />
+      </div>
+    );
+  }
+
+  const users = usersData?.users ?? [];
+  const permissionDefs = permsData?.permissions ?? {};
+
+  return (
+    <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-border-subtle">
+        <h2 className="font-semibold text-text-primary flex items-center gap-2">
+          <Shield className="w-4 h-4" /> User Management
+        </h2>
+        <p className="text-sm text-text-muted mt-0.5">Manage user roles and permissions (RBAC)</p>
+      </div>
+      <div className="p-5">
+        {/* Table header */}
+        <div className="grid grid-cols-[1fr_1fr_120px_100px] gap-3 px-3 py-2 text-xs font-medium text-text-muted uppercase tracking-wide border-b border-border-subtle">
+          <span>Username</span>
+          <span>Email</span>
+          <span>Role</span>
+          <span className="text-right">Actions</span>
+        </div>
+        {/* Rows */}
+        <div className="divide-y divide-border-subtle">
+          {users.map((u) => {
+            const isEditing = editingUser === u.id;
+            return (
+              <div key={u.id}>
+                <div className="grid grid-cols-[1fr_1fr_120px_100px] gap-3 px-3 py-3 items-center">
+                  <span className="text-sm text-text-primary font-medium truncate">{u.username}</span>
+                  <span className="text-sm text-text-secondary truncate">{u.email}</span>
+                  <div>
+                    {isEditing ? (
+                      <select
+                        value={editRole}
+                        onChange={(e) => setEditRole(e.target.value as UserRole)}
+                        className="w-full text-xs px-2 py-1.5 bg-bg-elevated border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="operator">Operator</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                    ) : (
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        u.role === "admin" ? "bg-brand-primary/20 text-brand-primary" :
+                        u.role === "operator" ? "bg-amber-500/20 text-amber-400" :
+                        "bg-bg-elevated text-text-muted"
+                      }`}>{u.role}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-end gap-1">
+                    {isEditing ? (
+                      <>
+                        <button
+                          onClick={() => saveEdit(u.id)}
+                          disabled={updateMutation.isPending}
+                          className="px-2.5 py-1 rounded-lg bg-brand-primary text-white text-xs font-medium hover:bg-brand-primary/90 transition-colors disabled:opacity-50"
+                        >
+                          {updateMutation.isPending ? <Spinner className="w-3 h-3" /> : "Save"}
+                        </button>
+                        <button
+                          onClick={() => setEditingUser(null)}
+                          className="px-2.5 py-1 rounded-lg text-text-muted text-xs hover:text-text-primary transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => startEdit(u)}
+                          className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
+                          title="Edit user"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                        {u.role !== "admin" && (
+                          deleteConfirm === u.id ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => deleteMutation.mutate(u.id)}
+                                disabled={deleteMutation.isPending}
+                                className="px-2 py-1 rounded-lg bg-red-500/10 text-red-400 text-xs font-medium hover:bg-red-500/20 transition-colors"
+                              >
+                                {deleteMutation.isPending ? <Spinner className="w-3 h-3" /> : "Confirm"}
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirm(null)}
+                                className="px-2 py-1 text-xs text-text-muted hover:text-text-primary transition-colors"
+                              >
+                                No
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteConfirm(u.id)}
+                              className="p-1.5 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                              title="Delete user"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+                {/* Operator permissions panel */}
+                {isEditing && editRole === "operator" && (
+                  <div className="px-3 pb-3">
+                    <button
+                      onClick={() => setExpandedPerms(expandedPerms === u.id ? null : u.id)}
+                      className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors mb-2"
+                    >
+                      <ChevronDown className={`w-3 h-3 transition-transform ${expandedPerms === u.id ? "rotate-180" : ""}`} />
+                      Operator Permissions
+                    </button>
+                    {expandedPerms === u.id && (
+                      <div className="grid grid-cols-2 gap-2 bg-bg-base rounded-lg p-3">
+                        {Object.entries(permissionDefs).map(([perm, label]) => (
+                          <label key={perm} className="flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={!!editPermissions[perm]}
+                              onChange={(e) =>
+                                setEditPermissions((prev) => ({ ...prev, [perm]: e.target.checked }))
+                              }
+                              className="w-3.5 h-3.5 rounded border-border-subtle bg-bg-elevated text-brand-primary focus:ring-brand-primary"
+                            />
+                            <span className="text-text-secondary">{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {users.length === 0 && (
+          <p className="text-sm text-text-muted text-center py-6">No users found.</p>
+        )}
+        {updateMutation.isError && (
+          <div className="mt-3 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-2.5">
+            {(updateMutation.error as Error).message}
+          </div>
+        )}
+        {deleteMutation.isError && (
+          <div className="mt-3 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-2.5">
+            {(deleteMutation.error as Error).message}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Settings() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<SettingsTab>("providers");
+  const toast = useToastHelpers();
+  const { user: currentUser } = useAuthStore();
+  const [activeTab, setActiveTab] = useState<SettingsTab>("ai");
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
   const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
   const [modelInputs, setModelInputs] = useState<Record<string, string>>({});
@@ -499,9 +858,10 @@ export function Settings() {
     queryFn: getProcessingSettings,
   });
 
-  const { data: localEmbeddingInfo, isLoading: loadingLocalEmbeddings } = useQuery({
+  const { data: localEmbeddingInfo, isLoading: loadingLocalEmbeddings, isError: localEmbeddingsError } = useQuery({
     queryKey: ["local-embedding-models"],
     queryFn: getLocalEmbeddingModels,
+    retry: 1,
   });
 
   // Mutations
@@ -510,6 +870,7 @@ export function Settings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["providers"] });
       queryClient.invalidateQueries({ queryKey: ["models"] });
+      toast.success("Provider updated");
     },
   });
 
@@ -520,6 +881,10 @@ export function Settings() {
       queryClient.invalidateQueries({ queryKey: ["providers"] });
       queryClient.invalidateQueries({ queryKey: ["models"] });
       setApiKeyInputs((prev) => ({ ...prev, [variables.provider]: "" }));
+      toast.success("Provider configuration saved");
+    },
+    onError: () => {
+      toast.error("Failed to save provider configuration");
     },
   });
 
@@ -541,6 +906,7 @@ export function Settings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["embedding-providers"] });
       queryClient.invalidateQueries({ queryKey: ["embedding-models"] });
+      toast.success("Embedding provider updated");
     },
   });
 
@@ -549,6 +915,10 @@ export function Settings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["processing-settings"] });
       setProcessingDirty(false);
+      toast.success("Processing settings saved");
+    },
+    onError: () => {
+      toast.error("Failed to save processing settings");
     },
   });
 
@@ -605,7 +975,7 @@ export function Settings() {
 
         {/* Tab Navigation */}
         <div className="flex gap-1 p-1 bg-bg-elevated rounded-xl overflow-x-auto">
-          {TABS.map((tab) => {
+          {TABS.filter(tab => tab.id !== "users" || currentUser?.role === "admin").map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             return (
@@ -626,7 +996,8 @@ export function Settings() {
         </div>
 
         {/* Tab Content */}
-        {activeTab === "providers" && (
+        {activeTab === "ai" && (<>
+        {/* Providers Section */}
         <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border-subtle">
             <h2 className="font-semibold text-text-primary">LLM Providers</h2>
@@ -883,10 +1254,8 @@ export function Settings() {
             </div>
           )}
         </div>
-        )}
 
-        {/* Embeddings Tab */}
-        {activeTab === "embeddings" && (
+        {/* Embeddings Section */}
         <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border-subtle">
             <h2 className="font-semibold text-text-primary">Embeddings</h2>
@@ -937,10 +1306,8 @@ export function Settings() {
             )}
           </div>
         </div>
-        )}
 
-        {/* Advanced Tab */}
-        {activeTab === "advanced" && (
+        {/* Advanced Section */}
         <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
             <div>
@@ -1036,6 +1403,8 @@ export function Settings() {
                   
                   {loadingLocalEmbeddings ? (
                     <div className="text-sm text-text-muted">Loading models...</div>
+                  ) : localEmbeddingsError ? (
+                    <div className="text-sm text-red-400">Failed to load embedding models. Check backend logs.</div>
                   ) : (
                     <div className="space-y-2">
                       {localEmbeddingInfo?.models.map((model) => {
@@ -1151,6 +1520,21 @@ export function Settings() {
                       />
                       <span className="text-sm">Enable Query Expansion</span>
                     </label>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={getProcessingValue("auto_embed") as boolean}
+                        onChange={(e) => handleProcessingChange("auto_embed", e.target.checked)}
+                        className="w-4 h-4 rounded border-border-default text-brand-primary focus:ring-brand-primary"
+                      />
+                      <div>
+                        <span className="text-sm">Auto-Embed on Upload</span>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          Generate GPU vector embeddings automatically. When off, queries use fast keyword search (BM25). You can embed individual sessions later.
+                        </p>
+                      </div>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -1196,13 +1580,19 @@ export function Settings() {
             </div>
           )}
         </div>
-        )}
+        </>)}
 
         {/* Storage Tab */}
         {activeTab === "storage" && <StorageTab />}
 
         {/* Integrations Tab */}
         {activeTab === "integrations" && <IntegrationsTab />}
+
+        {/* General Tab */}
+        {activeTab === "general" && <GeneralTab />}
+
+        {/* Users Tab */}
+        {activeTab === "users" && <UsersTab />}
 
         {/* About Tab */}
         {activeTab === "about" && (

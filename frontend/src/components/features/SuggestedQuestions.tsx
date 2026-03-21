@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Lightbulb, ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
 import { API_BASE_URL } from "@/services/api";
+import { getAuthHeader } from "@/stores/authStore";
 
 interface SuggestedQuestionsProps {
   sessionId: string | null;
@@ -38,7 +39,7 @@ async function fetchSuggestions(sessionId: string, refresh = false): Promise<Sug
   url.searchParams.set("session_id", sessionId);
   if (refresh) url.searchParams.set("refresh", "true");
   
-  const response = await fetch(url.toString());
+  const response = await fetch(url.toString(), { headers: getAuthHeader() });
   if (!response.ok) {
     throw new Error("Failed to fetch suggestions");
   }

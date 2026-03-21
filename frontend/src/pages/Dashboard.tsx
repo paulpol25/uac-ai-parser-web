@@ -13,6 +13,8 @@ import {
   FileArchive,
   Plus,
   Trash2,
+  StopCircle,
+  Cpu,
   Activity,
   Layers,
   RefreshCw,
@@ -25,8 +27,9 @@ import { Spinner } from "@/components/ui/Loader";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useInvestigationStore } from "@/stores/investigationStore";
 import { useUploadStore } from "@/stores/uploadStore";
+import { isViewer } from "@/stores/authStore";
 import { useToast } from "@/components/ui/Toast";
-import { parseFileWithProgress, getInvestigation, deleteSession, listInvestigations, type ParseProgressEvent } from "@/services/api";
+import { parseFileWithProgress, getInvestigation, deleteSession, cancelParse, triggerEmbed, listInvestigations, type ParseProgressEvent } from "@/services/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 // Type for parse result
@@ -97,6 +100,32 @@ export function Dashboard() {
 
   // Session deletion - hooks must be before any early returns
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; name: string } | null>(null);
+
+  const embedMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      await triggerEmbed(sessionId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["investigation", currentInvestigation?.id] });
+      addToast({ type: "success", title: "Embedding Started", message: "Vector embeddings are being generated in the background." });
+    },
+    onError: (error) => {
+      addToast({ type: "error", title: "Embed Failed", message: (error as Error).message });
+    },
+  });
+
+  const cancelParseMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      await cancelParse(sessionId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["investigation", currentInvestigation?.id] });
+      addToast({ type: "success", title: "Cancelling", message: "Parse job is being cancelled." });
+    },
+    onError: (error) => {
+      addToast({ type: "error", title: "Cancel Failed", message: (error as Error).message });
+    },
+  });
 
   const deleteSessionMutation = useMutation({
     mutationFn: async (sessionId: string) => {
@@ -454,7 +483,7 @@ export function Dashboard() {
             isDragging
               ? "border-brand-primary bg-brand-primary/5 scale-[1.01]"
               : "border-border-default hover:border-brand-primary/40 hover:bg-bg-surface/50",
-            parseMutation.isPending && "pointer-events-none"
+            (parseMutation.isPending || isViewer()) && "pointer-events-none opacity-50"
           )}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -625,6 +654,33 @@ export function Dashboard() {
                       {session.status === "searchable" ? "Embedding" : session.status}
                     </span>
                   )}
+                  {!isViewer() && session.status === "processing" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        cancelParseMutation.mutate(session.session_id);
+                      }}
+                      className="p-1 rounded hover:bg-amber-500/10 text-text-muted hover:text-amber-500 transition-colors opacity-0 group-hover:opacity-100"
+                      title="Cancel parse"
+                      disabled={cancelParseMutation.isPending}
+                    >
+                      <StopCircle className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {!isViewer() && session.status === "ready" && !session.has_embeddings && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        embedMutation.mutate(session.session_id);
+                      }}
+                      className="p-1 rounded hover:bg-purple-500/10 text-text-muted hover:text-purple-500 transition-colors opacity-0 group-hover:opacity-100"
+                      title="Generate vector embeddings for semantic search"
+                      disabled={embedMutation.isPending}
+                    >
+                      <Cpu className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {!isViewer() && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -635,6 +691,7 @@ export function Dashboard() {
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
+                  )}
                   <ChevronRight className="w-4 h-4 text-text-muted/50" />
                 </div>
               </div>

@@ -101,15 +101,14 @@ class CleanupService:
 
         # Delete ChromaDB collection
         try:
-            import chromadb
-            chroma_dir = current_app.config.get("CHROMA_PERSIST_DIR", "chroma_db")
-            client = chromadb.PersistentClient(path=chroma_dir)
+            from app.services.tiered_rag_service import get_chroma_client
+            client = get_chroma_client()
             collection_name = f"session_{session.session_id}"
             try:
                 client.delete_collection(collection_name)
             except Exception:
                 pass
-        except ImportError:
+        except Exception:
             pass
 
         # Delete extracted files

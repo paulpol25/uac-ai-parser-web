@@ -1,8 +1,8 @@
 // Package main is the entry point for the UAC-AI forensic collection agent.
 //
-// The agent runs on target Linux machines, polls the UAC-AI backend
-// via REST, executes commands (UAC collection, arbitrary commands,
-// file collection), and uploads results.
+// The agent runs on target Linux machines, communicates with the UAC-AI
+// backend via WebSocket (preferred) or REST polling (fallback), executes
+// forensic commands, and uploads results.
 package main
 
 import (
@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"uac-ai-agent/internal/config"
+	"uac-ai-agent/internal/crypto"
 	"uac-ai-agent/internal/transport"
 	"uac-ai-agent/internal/worker"
 
@@ -31,6 +32,15 @@ func main() {
 
 	log.Infof("UAC-AI Agent %s starting (agent_id=%s)", config.Version, cfg.AgentID)
 
+	// Encryption engine (optional — enabled if ENCRYPTION_KEY is set)
+	enc, err := crypto.NewEngine(cfg.EncryptionKey)
+	if err != nil {
+		log.Fatalf("Failed to initialise encryption: %v", err)
+	}
+	if enc.Enabled() {
+		log.Info("Payload encryption enabled (AES-256-GCM)")
+	}
+
 	// Command channel:  transport → worker
 	cmdCh := make(chan worker.Command, 32)
 
@@ -41,9 +51,18 @@ func main() {
 	wrk := worker.New(cfg, resultCh)
 	go wrk.RunTyped(cmdCh)
 
-	// Start REST polling transport
-	tp := transport.New(cfg, cmdCh, resultCh)
-	go tp.Run()
+	// Start transport — prefer WebSocket, fall back to REST
+	if cfg.WSURL() != "" {
+		log.Info("Using WebSocket transport (with REST fallback)")
+		ws := transport.NewWS(cfg, cmdCh, resultCh, enc)
+		go ws.Run()
+		defer ws.Close()
+	} else {
+		log.Info("Using REST polling transport")
+		tp := transport.New(cfg, cmdCh, resultCh, enc)
+		go tp.Run()
+		defer tp.Close()
+	}
 
 	// Wait for shutdown signal
 	sig := make(chan os.Signal, 1)
@@ -51,6 +70,5 @@ func main() {
 	<-sig
 
 	log.Info("Shutting down...")
-	tp.Close()
 	wrk.Close()
 }

@@ -3,6 +3,7 @@ import { Download, FileJson, FileText, Table, FileArchive, CheckCircle2 } from "
 import { cn } from "@/utils/cn";
 import { Spinner } from "@/components/ui/Loader";
 import { useSessionStore } from "@/stores/sessionStore";
+import { getAuthHeader } from "@/stores/authStore";
 
 const exportFormats = [
   {
@@ -42,7 +43,8 @@ export function Export() {
     setIsExporting(true);
     try {
       const response = await fetch(
-        `/api/v1/export?session_id=${sessionId}&format=${selectedFormat}`
+        `/api/v1/export?session_id=${sessionId}&format=${selectedFormat}`,
+        { headers: getAuthHeader() }
       );
 
       if (!response.ok) {

@@ -6,14 +6,22 @@ from werkzeug.utils import secure_filename
 import uuid
 import json
 import queue
+import threading
 from gevent.threadpool import ThreadPoolExecutor as _NativeExecutor
 from pathlib import Path
 from datetime import datetime, date
 
-from app.models import db, Investigation, User
+from app.models import db, Investigation, Session, User
 from app.services.parser_service import ParserService
+from app.routes.auth import require_auth, require_permission
+import logging
+
+logger = logging.getLogger(__name__)
 
 parse_bp = Blueprint("parse", __name__)
+
+# Track active parse jobs for cancellation: session_id -> threading.Event
+_active_parses: dict[str, threading.Event] = {}
 
 
 class DateTimeEncoder(json.JSONEncoder):
@@ -80,6 +88,7 @@ def allowed_file(filename: str) -> bool:
 
 
 @parse_bp.route("", methods=["POST"])
+@require_permission("upload_artifacts")
 def upload_and_parse():
     """
     Upload and parse a UAC archive file.
@@ -158,6 +167,7 @@ def upload_and_parse():
 
 
 @parse_bp.route("/stream", methods=["POST"])
+@require_permission("upload_artifacts")
 def upload_and_parse_stream():
     """
     Upload and parse a UAC archive file with SSE streaming progress.
@@ -211,6 +221,8 @@ def upload_and_parse_stream():
     # Create a queue for progress updates
     progress_queue = queue.Queue()
     result_holder = {"result": None, "error": None}
+    cancel_event = threading.Event()
+    _active_parses[session_id] = cancel_event
     
     # Capture app reference for use in background thread
     # (current_app is a proxy that doesn't work in other threads)
@@ -232,7 +244,10 @@ def upload_and_parse_stream():
             # Need app context for database operations
             with app.app_context():
                 parser_service = get_parser()
-                result = parser_service.parse(file_path, session_id, investigation_id, progress_callback)
+                result = parser_service.parse(
+                    file_path, session_id, investigation_id,
+                    progress_callback, cancel_event,
+                )
                 result_holder["result"] = {
                     "session_id": session_id,
                     "investigation_id": investigation_id,
@@ -251,7 +266,8 @@ def upload_and_parse_stream():
             traceback.print_exc()
             result_holder["error"] = str(e)
         finally:
-            # Signal completion
+            # Signal completion and clean up cancel tracking
+            _active_parses.pop(session_id, None)
             progress_queue.put(None)
     
     def generate():
@@ -297,6 +313,7 @@ def upload_and_parse_stream():
 
 
 @parse_bp.route("/<session_id>/status", methods=["GET"])
+@require_auth
 def get_parse_status(session_id: str):
     """Get the parsing status for a session."""
     parser_service = get_parser()
@@ -312,6 +329,7 @@ def get_parse_status(session_id: str):
 
 
 @parse_bp.route("/<session_id>/artifacts", methods=["GET"])
+@require_auth
 def get_artifacts(session_id: str):
     """Get parsed artifacts for a session."""
     parser_service = get_parser()
@@ -327,3 +345,146 @@ def get_artifacts(session_id: str):
         "session_id": session_id,
         "artifacts": artifacts
     })
+
+
+@parse_bp.route("/<session_id>/cancel", methods=["POST"])
+@require_permission("upload_artifacts")
+def cancel_parse(session_id: str):
+    """Cancel an in-progress parse job."""
+    cancel_event = _active_parses.get(session_id)
+    if cancel_event:
+        cancel_event.set()
+        return jsonify({"status": "cancelling", "session_id": session_id})
+    
+    # Not actively parsing — just mark session as cancelled in DB
+    session = Session.query.filter_by(session_id=session_id).first()
+    if not session:
+        return jsonify({"error": "not_found", "message": "Session not found"}), 404
+    if session.status == "processing":
+        session.status = "cancelled"
+        db.session.commit()
+    return jsonify({"status": session.status, "session_id": session_id})
+
+
+@parse_bp.route("/<session_id>/embed", methods=["POST"])
+@require_permission("upload_artifacts")
+def trigger_embed(session_id: str):
+    """Trigger background embedding for a session that skipped auto-embed."""
+    session = Session.query.filter_by(session_id=session_id).first()
+    if not session:
+        return jsonify({"error": "not_found", "message": "Session not found"}), 404
+
+    # Only embed sessions that have chunks but no embeddings yet
+    if session.status not in ("ready", "searchable"):
+        return jsonify({"error": "invalid_state", "message": f"Session is {session.status}, cannot embed"}), 400
+
+    from app.models import Chunk
+    chunk_count = Chunk.query.filter_by(session_id=session.id).count()
+    if chunk_count == 0:
+        return jsonify({"error": "no_chunks", "message": "Session has no chunks to embed"}), 400
+
+    # Check if already has embeddings in ChromaDB
+    from app.services.tiered_rag_service import get_tiered_rag_service
+    rag = get_tiered_rag_service()
+    coll_name = f"session_{session_id.replace('-', '_')}"
+    try:
+        coll = rag.chroma.get_collection(coll_name)
+        if coll.count() > 0:
+            return jsonify({"error": "already_embedded", "message": "Session already has embeddings"}), 400
+    except Exception:
+        pass  # Collection doesn't exist — fine, we'll create it
+
+    # Mark as embedding in progress
+    session.status = "searchable"
+    db.session.commit()
+
+    # Spawn background embedding thread
+    from gevent.threadpool import ThreadPoolExecutor as _NativePool
+    from flask import current_app
+    app = current_app._get_current_object()
+    session_db_id = session.id
+
+    def _bg_embed():
+        try:
+            with app.app_context():
+                bg_session = Session.query.get(session_db_id)
+                if not bg_session:
+                    return
+                chunks = Chunk.query.filter_by(session_id=session_db_id).all()
+                if not chunks:
+                    return
+
+                from app.services.embedding_service import get_embedding_service
+                embedding_service = get_embedding_service()
+                total = len(chunks)
+
+                if embedding_service.is_available:
+                    logger.info(f"🚀 [Embed] Generating {total} embeddings with GPU for {session_id}...")
+                    docs = [c.content for c in chunks]
+                    embeddings = embedding_service.embed_documents(docs, batch_size=128, show_progress=False)
+                    BATCH = 500
+                    for i in range(0, total, BATCH):
+                        batch_c = chunks[i:i+BATCH]
+                        batch_e = embeddings[i:i+BATCH]
+                        batch_d = docs[i:i+BATCH]
+                        try:
+                            collection = rag.chroma.get_or_create_collection(
+                                name=coll_name, metadata={"session_id": session_id}
+                            )
+                            collection.upsert(
+                                ids=[c.chunk_id for c in batch_c],
+                                embeddings=batch_e,
+                                documents=batch_d,
+                                metadatas=[{
+                                    "source_file": c.source_file,
+                                    "source_type": c.source_type,
+                                    "artifact_category": c.artifact_category,
+                                    "importance_score": c.importance_score
+                                } for c in batch_c]
+                            )
+                        except Exception:
+                            import traceback
+                            traceback.print_exc()
+                else:
+                    logger.warning("⚠️ [Embed] Using ChromaDB default embeddings (slower)")
+                    BATCH = 250
+                    for i in range(0, total, BATCH):
+                        batch = chunks[i:i+BATCH]
+                        try:
+                            collection = rag.chroma.get_or_create_collection(
+                                name=coll_name, metadata={"session_id": session_id}
+                            )
+                            collection.upsert(
+                                ids=[c.chunk_id for c in batch],
+                                documents=[c.content for c in batch],
+                                metadatas=[{
+                                    "source_file": c.source_file,
+                                    "source_type": c.source_type,
+                                    "artifact_category": c.artifact_category,
+                                    "importance_score": c.importance_score
+                                } for c in batch]
+                            )
+                        except Exception:
+                            import traceback
+                            traceback.print_exc()
+
+                # Build graph
+                try:
+                    from app.services.graph_rag_service import get_graph_rag_service
+                    graph_service = get_graph_rag_service()
+                    graph_service.build_relationships_for_session(session_id)
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
+
+                bg_session.status = "ready"
+                bg_session.has_embeddings = True
+                db.session.commit()
+                logger.info(f"✅ [Embed] Session {session_id} embeddings complete")
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    pool = _NativePool(max_workers=1)
+    pool.submit(_bg_embed)
+    return jsonify({"status": "embedding", "session_id": session_id, "chunks": chunk_count})

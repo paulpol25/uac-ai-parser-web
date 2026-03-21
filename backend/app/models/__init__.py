@@ -27,6 +27,8 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
+    role = db.Column(db.String(20), default="operator")  # admin, operator, viewer
+    operator_permissions = db.Column(db.JSON, default=dict)  # granular permissions for operators
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime, nullable=True)
     
@@ -118,6 +120,7 @@ class Session(db.Model):
     # Status: processing -> searchable (chunks done) -> ready (embeddings done), or failed
     status = db.Column(db.String(20), default="processing")  # processing, searchable, ready, failed
     error_message = db.Column(db.Text, nullable=True)
+    has_embeddings = db.Column(db.Boolean, default=False)
     
     # System info extracted from UAC
     hostname = db.Column(db.String(255), nullable=True)
@@ -639,10 +642,81 @@ class AgentEvent(db.Model):
         return f"<AgentEvent {self.event_type} agent={self.agent_id[:8]}>"
 
 
+class YaraRule(db.Model):
+    """Managed YARA rule stored in the platform."""
+    __tablename__ = "yara_rules"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    filename = db.Column(db.String(255), unique=True, nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    source = db.Column(db.String(50), nullable=False, default="upload")  # upload, elastic_github
+    content = db.Column(db.Text, nullable=False)
+    file_size = db.Column(db.Integer, nullable=False, default=0)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<YaraRule {self.filename}>"
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "filename": self.filename,
+            "description": self.description,
+            "source": self.source,
+            "file_size": self.file_size,
+            "enabled": self.enabled,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class Playbook(db.Model):
+    """Custom or built-in playbook (ordered sequence of agent commands)."""
+    __tablename__ = "playbooks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text, default="")
+    commands = db.Column(db.JSON, nullable=False, default=list)
+    is_builtin = db.Column(db.Boolean, default=False)
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    creator = db.relationship("User", backref=db.backref("playbooks", lazy="dynamic"))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "commands": self.commands,
+            "commands_count": len(self.commands) if self.commands else 0,
+            "is_builtin": self.is_builtin,
+            "created_by": self.created_by,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class AppSetting(db.Model):
+    """Application-wide key-value settings stored in DB."""
+    __tablename__ = "app_settings"
+
+    key = db.Column(db.String(100), primary_key=True)
+    value = db.Column(db.Text, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # Export all models
 __all__ = [
     "db", "User", "AuthToken", "Investigation", "Session", "Chunk",
     "Entity", "EntityRelationship", "QueryLog", "ChunkRelevance",
     "Chat", "ChatMessage", "MitreMapping", "IOCEntry", "FileHash", "CleanupPolicy",
-    "Agent", "AgentCommand", "AgentEvent",
+    "Agent", "AgentCommand", "AgentEvent", "YaraRule", "Playbook", "AppSetting",
 ]

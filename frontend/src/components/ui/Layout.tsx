@@ -15,12 +15,14 @@ import {
   X,
   Crosshair,
   Monitor,
+  ShieldAlert,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { useQuery } from "@tanstack/react-query";
 import { useInvestigationStore } from "@/stores/investigationStore";
-import { useAuthStore } from "@/stores/authStore";
-import { logout as apiLogout, listInvestigations } from "@/services/api";
+import { useAuthStore, hasPermission } from "@/stores/authStore";
+import { logout as apiLogout, listInvestigations, getCurrentUser } from "@/services/api";
 import { Footer } from "./Footer";
 import { ThemeToggle } from "./ThemeToggle";
 import { GlobalUploadProgress } from "@/components/features/GlobalUploadProgress";
@@ -28,25 +30,46 @@ import { GlobalUploadProgress } from "@/components/features/GlobalUploadProgress
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/investigations", icon: FolderOpen, label: "Cases" },
-  { to: "/agents", icon: Monitor, label: "Agents" },
-  { to: "/query", icon: Sparkles, label: "AI Query" },
+  { to: "/agents", icon: Monitor, label: "Agents", permission: "dispatch_commands" as const },
+  { to: "/yara-rules", icon: ShieldAlert, label: "YARA Rules", permission: "manage_yara_rules" as const },
+  { to: "/query", icon: Sparkles, label: "AI Query", permission: "query_data" as const },
   { to: "/timeline", icon: Clock, label: "Timeline" },
   { to: "/search", icon: Search, label: "Search" },
   { to: "/analysis", icon: Crosshair, label: "Analysis" },
-  { to: "/export", icon: Download, label: "Export" },
-  { to: "/settings", icon: Settings, label: "Settings" },
+  { to: "/export", icon: Download, label: "Export", permission: "export_data" as const },
+  { to: "/docs", icon: BookOpen, label: "Documentation" },
+  { to: "/settings", icon: Settings, label: "Settings", permission: "view_settings" as const },
 ];
 
 export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentInvestigation, setCurrentInvestigation, clearInvestigation } = useInvestigationStore();
-  const { user, logout, isAuthenticated } = useAuthStore();
+  const { user, logout, isAuthenticated, setAuth } = useAuthStore();
   const [showInvestigationDropdown, setShowInvestigationDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const invDropdownRef = useRef<HTMLDivElement>(null);
   const userDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Periodically refresh user data so permission/role changes reflect in the nav
+  const { data: freshUser } = useQuery({
+    queryKey: ["current-user"],
+    queryFn: getCurrentUser,
+    enabled: isAuthenticated,
+    refetchInterval: 30000,
+  });
+
+  useEffect(() => {
+    if (!freshUser) return;
+    const token = useAuthStore.getState().token;
+    if (token) setAuth(token, freshUser);
+  }, [freshUser, setAuth]);
+
+  // Filter nav items based on user permissions
+  const visibleNavItems = navItems.filter((item) =>
+    !item.permission || hasPermission(item.permission),
+  );
 
   const { data: investigationsData } = useQuery({
     queryKey: ["investigations"],
@@ -113,7 +136,7 @@ export function Layout() {
 
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center">
-            {navItems.map(({ to, icon: Icon, label }) => (
+            {visibleNavItems.map(({ to, icon: Icon, label }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -265,7 +288,7 @@ export function Layout() {
       {mobileMenuOpen && (
         <div className="lg:hidden absolute inset-x-0 top-12 z-30 bg-bg-surface/95 backdrop-blur-xl border-b border-border-subtle animate-slide-up">
           <nav className="p-2 space-y-0.5">
-            {navItems.map(({ to, icon: Icon, label }) => (
+            {visibleNavItems.map(({ to, icon: Icon, label }) => (
               <NavLink
                 key={to}
                 to={to}
