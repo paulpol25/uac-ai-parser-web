@@ -45,10 +45,22 @@ class ProviderFactory:
     _active_provider: Optional[LLMProvider] = None
     _active_embedding_provider: Optional[EmbeddingProvider] = None
     _config: Optional[dict] = None
-    
+    _config_mtime: float = 0.0
+
     @classmethod
     def _load_config(cls) -> dict:
         """Load provider configuration from file."""
+        # Invalidate in-memory cache when the config file has been modified by
+        # another worker (Gunicorn multi-worker: each process has its own cache).
+        if cls._config is not None:
+            try:
+                current_mtime = CONFIG_PATH.stat().st_mtime if CONFIG_PATH.exists() else 0.0
+                if current_mtime <= cls._config_mtime:
+                    return cls._config
+                # File was updated by another process — force a reload.
+                cls._config = None
+            except OSError:
+                pass
         if cls._config is not None:
             return cls._config
         
@@ -106,10 +118,13 @@ class ProviderFactory:
                                 if subkey not in saved_config[key]:
                                     saved_config[key][subkey] = default_config[key][subkey]
                     cls._config = saved_config
+                cls._config_mtime = CONFIG_PATH.stat().st_mtime
             except Exception:
                 cls._config = default_config
+                cls._config_mtime = 0.0
         else:
             cls._config = default_config
+            cls._config_mtime = 0.0
 
         # Env vars always override saved config for connectivity settings
         # (critical in Docker where OLLAMA_BASE_URL must point to host.docker.internal)
@@ -147,10 +162,15 @@ class ProviderFactory:
         """Save provider configuration to file."""
         if cls._config is None:
             return
-        
+
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(CONFIG_PATH, "w") as f:
             json.dump(cls._config, f, indent=2)
+        # Update mtime so this worker's cache stays valid after its own write.
+        try:
+            cls._config_mtime = CONFIG_PATH.stat().st_mtime
+        except OSError:
+            cls._config_mtime = 0.0
     
     @classmethod
     def get_config(cls) -> dict:
