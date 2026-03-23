@@ -34,6 +34,7 @@ type SectionId =
   | "yara"
   | "rbac"
   | "settings"
+  | "mcp"
   | "troubleshooting";
 
 const SECTIONS: { id: SectionId; label: string; icon: typeof BookOpen }[] = [
@@ -44,6 +45,7 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof BookOpen }[] = [
   { id: "yara", label: "YARA Rules", icon: ShieldAlert },
   { id: "rbac", label: "Roles & Permissions", icon: Users },
   { id: "settings", label: "Settings", icon: Settings },
+  { id: "mcp", label: "MCP Integration", icon: Network },
   { id: "troubleshooting", label: "Troubleshooting", icon: Bug },
 ];
 
@@ -94,6 +96,7 @@ export function Documentation() {
           {activeSection === "yara" && <YaraSection />}
           {activeSection === "rbac" && <RbacSection />}
           {activeSection === "settings" && <SettingsSection />}
+          {activeSection === "mcp" && <McpSection />}
           {activeSection === "troubleshooting" && <TroubleshootingSection />}
         </div>
       </div>
@@ -667,6 +670,190 @@ function SettingsSection() {
         Sheetstorm is an external reporting tool. When configured, you can sync investigation findings directly from the
         Agents page. Configure the Sheetstorm URL and API key in the Settings page.
       </DocParagraph>
+    </div>
+  );
+}
+
+function McpSection() {
+  return (
+    <div>
+      <DocHeading>MCP Integration</DocHeading>
+      <DocParagraph>
+        UAC AI includes a Model Context Protocol (MCP) server that allows AI assistants like VS Code Copilot, Claude Desktop,
+        and Gemini CLI to interact with the platform directly — querying sessions, dispatching commands, searching IOCs, and more.
+      </DocParagraph>
+
+      <DocSubheading>Transport Modes</DocSubheading>
+      <DocTable
+        headers={["Transport", "Use Case", "Details"]}
+        rows={[
+          ["SSE (Server-Sent Events)", "Docker deployment / remote server", "Runs on port 8811; clients connect over HTTP"],
+          ["stdio", "Local / standalone usage", "Client launches the MCP server process directly"],
+        ]}
+      />
+      <DocNote type="info">
+        Docker Compose starts the MCP server in SSE mode automatically on port 8811.
+        For stdio mode you need the package installed locally:{" "}
+        <code className="bg-bg-elevated px-1 rounded text-brand-primary">cd mcp-server && pip install -e .</code>
+      </DocNote>
+
+      <DocSubheading>VS Code (GitHub Copilot)</DocSubheading>
+      <DocParagraph>
+        Create a <code className="bg-bg-elevated px-1 rounded text-brand-primary">.vscode/mcp.json</code> file in your workspace.
+      </DocParagraph>
+      <DocParagraph>
+        <strong className="text-text-primary">Option A — SSE transport (Docker deployment):</strong>
+      </DocParagraph>
+      <DocCode>{`{
+  "servers": {
+    "uac-ai": {
+      "type": "sse",
+      "url": "http://localhost:8811/sse",
+      "headers": {
+        "Authorization": "Bearer \${input:mcp_auth_token}"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "id": "mcp_auth_token",
+      "type": "promptString",
+      "description": "MCP Auth Token (from .env MCP_AUTH_TOKEN)",
+      "password": true
+    }
+  ]
+}`}</DocCode>
+      <DocParagraph>
+        <strong className="text-text-primary">Option B — stdio transport (local dev):</strong>
+      </DocParagraph>
+      <DocCode>{`{
+  "servers": {
+    "uac-ai": {
+      "command": "uac-ai-mcp",
+      "env": {
+        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
+        "UAC_AI_USERNAME": "admin@uac-ai.local",
+        "UAC_AI_PASSWORD": "your-password"
+      }
+    }
+  }
+}`}</DocCode>
+
+      <DocSubheading>Claude Desktop</DocSubheading>
+      <DocParagraph>
+        Add the following to your <code className="bg-bg-elevated px-1 rounded text-brand-primary">claude_desktop_config.json</code>:
+      </DocParagraph>
+      <DocNote type="tip">
+        Config file location — <strong>macOS:</strong>{" "}
+        <code className="bg-bg-elevated px-1 rounded text-brand-primary">~/Library/Application Support/Claude/claude_desktop_config.json</code>{" "}
+        · <strong>Windows:</strong>{" "}
+        <code className="bg-bg-elevated px-1 rounded text-brand-primary">%APPDATA%\Claude\claude_desktop_config.json</code>
+      </DocNote>
+      <DocParagraph>
+        <strong className="text-text-primary">Option A — stdio transport (recommended):</strong>
+      </DocParagraph>
+      <DocCode>{`{
+  "mcpServers": {
+    "uac-ai": {
+      "command": "uac-ai-mcp",
+      "env": {
+        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
+        "UAC_AI_USERNAME": "admin@uac-ai.local",
+        "UAC_AI_PASSWORD": "your-password"
+      }
+    }
+  }
+}`}</DocCode>
+      <DocParagraph>
+        <strong className="text-text-primary">Option B — SSE transport (remote Docker server):</strong>
+      </DocParagraph>
+      <DocCode>{`{
+  "mcpServers": {
+    "uac-ai": {
+      "type": "sse",
+      "url": "http://your-server:8811/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
+      }
+    }
+  }
+}`}</DocCode>
+
+      <DocSubheading>Gemini CLI</DocSubheading>
+      <DocParagraph>
+        Add the MCP server to your Gemini CLI settings at{" "}
+        <code className="bg-bg-elevated px-1 rounded text-brand-primary">~/.gemini/settings.json</code>:
+      </DocParagraph>
+      <DocParagraph>
+        <strong className="text-text-primary">Option A — stdio transport:</strong>
+      </DocParagraph>
+      <DocCode>{`{
+  "mcpServers": {
+    "uac-ai": {
+      "command": "uac-ai-mcp",
+      "env": {
+        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
+        "UAC_AI_USERNAME": "admin@uac-ai.local",
+        "UAC_AI_PASSWORD": "your-password"
+      }
+    }
+  }
+}`}</DocCode>
+      <DocParagraph>
+        <strong className="text-text-primary">Option B — SSE transport (remote Docker server):</strong>
+      </DocParagraph>
+      <DocCode>{`{
+  "mcpServers": {
+    "uac-ai": {
+      "type": "sse",
+      "url": "http://your-server:8811/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
+      }
+    }
+  }
+}`}</DocCode>
+
+      <DocSubheading>Environment Variables</DocSubheading>
+      <DocTable
+        headers={["Variable", "Description", "Default"]}
+        rows={[
+          ["UAC_AI_API_URL", "Backend API base URL", "http://backend:5000/api/v1"],
+          ["UAC_AI_API_TOKEN", "Pre-existing JWT token for auth", "(none)"],
+          ["UAC_AI_USERNAME", "Username for auto-login (if no token)", "(none)"],
+          ["UAC_AI_PASSWORD", "Password for auto-login (if no token)", "(none)"],
+          ["MCP_TRANSPORT", "Transport mode: stdio or sse", "stdio"],
+          ["SSE_PORT", "Port for SSE transport", "8811"],
+          ["MCP_AUTH_TOKEN", "Bearer token required for SSE clients", "(none)"],
+          ["REDIS_URL", "Redis URL for caching", "redis://localhost:6379"],
+          ["LOG_LEVEL", "Logging verbosity", "INFO"],
+        ]}
+      />
+
+      <DocSubheading>Authentication Flow</DocSubheading>
+      <DocParagraph>
+        The MCP server authenticates with the backend in one of two ways:
+      </DocParagraph>
+      <ul className="list-disc list-inside space-y-1 text-sm text-text-secondary mb-4">
+        <li><strong className="text-text-primary">Token-based:</strong> Set <code className="bg-bg-elevated px-1 rounded text-brand-primary">UAC_AI_API_TOKEN</code> to a valid JWT — the server uses it directly</li>
+        <li><strong className="text-text-primary">Credential-based:</strong> Set <code className="bg-bg-elevated px-1 rounded text-brand-primary">UAC_AI_USERNAME</code> and <code className="bg-bg-elevated px-1 rounded text-brand-primary">UAC_AI_PASSWORD</code> — the server calls the login endpoint automatically</li>
+      </ul>
+      <DocNote type="warning">
+        For SSE mode, the <code className="bg-bg-elevated px-1 rounded text-brand-primary">MCP_AUTH_TOKEN</code> environment
+        variable protects the MCP endpoint itself. This is separate from the backend credentials above.
+        Set it in your <code className="bg-bg-elevated px-1 rounded text-brand-primary">.env</code> file and pass the same
+        value in the client&apos;s Authorization header.
+      </DocNote>
+
+      <DocSubheading>Quick Reference</DocSubheading>
+      <DocTable
+        headers={["Client", "Config File", "Recommended Transport"]}
+        rows={[
+          ["VS Code (Copilot)", ".vscode/mcp.json", "SSE (Docker) or stdio (local)"],
+          ["Claude Desktop", "claude_desktop_config.json", "stdio (local) or SSE (remote)"],
+          ["Gemini CLI", "~/.gemini/settings.json", "stdio (local) or SSE (remote)"],
+        ]}
+      />
     </div>
   );
 }

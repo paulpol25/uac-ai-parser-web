@@ -139,33 +139,145 @@ with app.app_context():
         print(f'Admin user password updated: {email}')
 " 2>/dev/null || echo "Admin seeding may have already run"
 
-echo ""
-echo "==================================="
-echo "UAC AI Parser is running!"
-echo "==================================="
-echo ""
-echo "Frontend:     http://localhost:3000"
-echo "Backend API:  http://localhost:5001/api/v1"
-echo "MCP Server:   http://localhost:8811/sse"
-echo ""
+# ---------------------------------------------------------------
+# Re-source .env to pick up any auto-generated values
+# ---------------------------------------------------------------
+source .env
 
-# Try to detect server IP for remote access links
+# Detect server IP for remote access links
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+BASE_URL="http://localhost"
 if [ -n "$SERVER_IP" ] && [ "$SERVER_IP" != "127.0.0.1" ]; then
-  echo "Remote access:"
-  echo "  Frontend:   http://$SERVER_IP:3000"
-  echo "  Backend API: http://$SERVER_IP:5001/api/v1"
-  echo ""
+  REMOTE_URL="http://$SERVER_IP"
 fi
 
-echo "Default admin credentials:"
-echo "  Email:    admin@uac-ai.local"
-echo "  Password: (check ADMIN_PASSWORD in .env)"
 echo ""
-echo "Agent binaries:  agent/bin/uac-agent-linux-{amd64,arm64}"
+echo "╔═══════════════════════════════════════════════════════════════╗"
+echo "║              UAC AI Parser is running!                       ║"
+echo "╚═══════════════════════════════════════════════════════════════╝"
+echo ""
+echo "───────────────────────────────────────────────────────────────"
+echo "  Services"
+echo "───────────────────────────────────────────────────────────────"
+echo "  Frontend:      ${BASE_URL}:3000"
+echo "  Backend API:   ${BASE_URL}:5001/api/v1"
+echo "  MCP Server:    ${BASE_URL}:8811/sse"
+if [ -n "$REMOTE_URL" ]; then
+  echo ""
+  echo "  Remote access:"
+  echo "    Frontend:    ${REMOTE_URL}:3000"
+  echo "    Backend:     ${REMOTE_URL}:5001/api/v1"
+  echo "    MCP Server:  ${REMOTE_URL}:8811/sse"
+fi
+echo ""
+echo "───────────────────────────────────────────────────────────────"
+echo "  Admin Credentials"
+echo "───────────────────────────────────────────────────────────────"
+echo "  Email:     ${ADMIN_EMAIL:-admin@uac-ai.local}"
+echo "  Password:  ${ADMIN_PASSWORD}"
+echo ""
+echo "───────────────────────────────────────────────────────────────"
+echo "  MCP Auth Token  (needed by AI clients)"
+echo "───────────────────────────────────────────────────────────────"
+echo "  ${MCP_AUTH_TOKEN}"
+echo ""
+echo "───────────────────────────────────────────────────────────────"
+echo "  VS Code — .vscode/mcp.json"
+echo "───────────────────────────────────────────────────────────────"
+cat <<EOF
+  {
+    "servers": {
+      "uac-ai": {
+        "type": "sse",
+        "url": "${BASE_URL}:8811/sse",
+        "headers": {
+          "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
+        }
+      }
+    }
+  }
+EOF
+echo ""
+echo "───────────────────────────────────────────────────────────────"
+echo "  Claude Desktop — claude_desktop_config.json"
+echo "───────────────────────────────────────────────────────────────"
+echo ""
+echo "  Option A — stdio transport (requires local install):"
+cat <<EOF
+  {
+    "mcpServers": {
+      "uac-ai": {
+        "command": "uac-ai-mcp",
+        "env": {
+          "UAC_AI_URL": "${BASE_URL}:5001",
+          "UAC_AI_TOKEN": "${MCP_AUTH_TOKEN}"
+        }
+      }
+    }
+  }
+EOF
+echo ""
+echo "  Option B — SSE transport (remote / Docker):"
+cat <<EOF
+  {
+    "mcpServers": {
+      "uac-ai": {
+        "type": "sse",
+        "url": "${BASE_URL}:8811/sse",
+        "headers": {
+          "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
+        }
+      }
+    }
+  }
+EOF
+echo ""
+echo "───────────────────────────────────────────────────────────────"
+echo "  Gemini CLI — ~/.gemini/settings.json"
+echo "───────────────────────────────────────────────────────────────"
+echo ""
+echo "  Option A — stdio transport (requires local install):"
+cat <<EOF
+  {
+    "mcpServers": {
+      "uac-ai": {
+        "command": "uac-ai-mcp",
+        "env": {
+          "UAC_AI_URL": "${BASE_URL}:5001",
+          "UAC_AI_TOKEN": "${MCP_AUTH_TOKEN}"
+        }
+      }
+    }
+  }
+EOF
+echo ""
+echo "  Option B — SSE transport (remote / Docker):"
+cat <<EOF
+  {
+    "mcpServers": {
+      "uac-ai": {
+        "type": "sse",
+        "url": "${BASE_URL}:8811/sse",
+        "headers": {
+          "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
+        }
+      }
+    }
+  }
+EOF
+echo ""
+echo "───────────────────────────────────────────────────────────────"
+echo "  Agent Binaries"
+echo "───────────────────────────────────────────────────────────────"
+echo "  agent/bin/uac-agent-linux-{amd64,arm64}"
 echo "  Deploy agents from the Agents page in the UI,"
 echo "  or pass --rebuild-agent to rebuild binaries."
 echo ""
-echo "To view logs:  docker compose logs -f"
-echo "To stop:       docker compose down"
+echo "───────────────────────────────────────────────────────────────"
+echo "  Quick Commands"
+echo "───────────────────────────────────────────────────────────────"
+echo "  View logs:   docker compose logs -f"
+echo "  Stop:        docker compose down"
+echo "  Restart:     docker compose restart"
+echo "  Rebuild:     docker compose up -d --build"
 echo ""

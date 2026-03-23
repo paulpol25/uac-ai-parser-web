@@ -9,7 +9,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED.svg)](https://docs.docker.com/compose/)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-purple.svg)](https://modelcontextprotocol.io)
 
-[Features](#features) · [Quick Start](#quick-start) · [Deployment](#deployment) · [MCP Server](#mcp-server) · [API Reference](#api-reference) · [Architecture](#architecture)
+[Features](#features) · [Quick Start](#quick-start) · [Environment Setup](#environment-setup) · [Deployment](#deployment) · [Agent Deployment](#agent-deployment) · [MCP Integration](#mcp-integration) · [API Reference](#api-reference) · [Architecture](#architecture)
 
 </div>
 
@@ -19,6 +19,8 @@
 
 UAC AI is a full-stack platform for analyzing [UAC (Unix-like Artifacts Collector)](https://github.com/tclahr/uac) outputs using AI. Upload a `.tar.gz` archive, and the system parses, chunks, embeds, and indexes every artifact — then lets you query the data with natural language, explore interactive timelines, map MITRE ATT&CK techniques, extract IOCs, and compare sessions side by side.
 
+The platform also supports deploying lightweight Go agents to remote Linux endpoints for live artifact collection, command execution, YARA scanning, network capture, and full UAC triage — all managed from the web UI.
+
 Everything runs locally. Your forensic data never leaves your infrastructure.
 
 ---
@@ -27,8 +29,9 @@ Everything runs locally. Your forensic data never leaves your infrastructure.
 
 | Category | Capabilities |
 |---|---|
-| **Investigation Management** | Multi-investigation, multi-session workflow · role-based access · local or Supabase auth |
+| **Investigation Management** | Multi-investigation, multi-session workflow · role-based access (Admin / Operator / Viewer) · local or Supabase auth |
 | **Smart Parsing** | Drag-and-drop UAC archive upload · background processing · automatic artifact categorization · chunked storage for RAG |
+| **Remote Agents** | Go-based agents for Linux endpoints · 13 command types · WebSocket + REST transport · encrypted payloads |
 | **AI Chat** | Natural language queries · agent mode (multi-step reasoning) · fast mode · suggested questions · context preview |
 | **MITRE ATT&CK** | Automated technique scanning · tactic heatmap · per-session summary |
 | **IOC Extraction** | IP, domain, hash, URL, email extraction · cross-session correlation · IOC search |
@@ -37,7 +40,9 @@ Everything runs locally. Your forensic data never leaves your infrastructure.
 | **Session Compare** | Side-by-side diff of two sessions · highlight unique artifacts |
 | **Search** | Full-text search across all chunks · category and file-type filtering |
 | **Export** | JSONL (Timesketch) · JSON · Markdown · CSV |
-| **MCP Server** | 60+ tools for AI assistants (Claude, Copilot, custom agents) via Model Context Protocol |
+| **Playbooks** | Built-in & custom multi-command automation workflows |
+| **YARA Rules** | Upload, manage, and deploy YARA rules to agents |
+| **MCP Server** | 60+ tools for AI assistants (VS Code Copilot, Claude Desktop, Gemini CLI) via Model Context Protocol |
 
 ---
 
@@ -65,9 +70,10 @@ chmod +x start.sh
 `start.sh` will:
 1. Create `.env` from `.env.example` if missing
 2. Auto-generate secrets (`SECRET_KEY`, `POSTGRES_PASSWORD`, `MCP_AUTH_TOKEN`)
-3. Build and start all 5 containers
-4. Run database migrations
-5. Seed the default admin user
+3. Build agent binaries (if Go is installed)
+4. Build and start all 5 containers
+5. Run database migrations
+6. Seed the default admin user
 
 Once running:
 
@@ -81,19 +87,105 @@ Default credentials: `admin@uac-ai.local` / check `ADMIN_PASSWORD` in `.env`
 
 ---
 
+## Environment Setup
+
+### Creating the `.env` File
+
+The `start.sh` script copies `.env.example` → `.env` automatically on first run. To set it up manually:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` with your preferred settings. The file is divided into sections:
+
+### Required Settings
+
+| Variable | Default | Description |
+|---|---|---|
+| `SECRET_KEY` | `dev-secret-key-change-in-production` | Flask session signing key. `start.sh` auto-generates a secure value. |
+| `MCP_AUTH_TOKEN` | (empty) | Bearer token for MCP SSE endpoint. `start.sh` auto-generates this. |
+
+### LLM Configuration
+
+At least one LLM provider must be configured for AI features to work.
+
+| Variable | Default | Description |
+|---|---|---|
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
+| `OLLAMA_MODEL` | `llama3.1` | Default Ollama model |
+| `OPENAI_API_KEY` | (none) | OpenAI API key |
+| `ANTHROPIC_API_KEY` | (none) | Anthropic Claude API key |
+| `GOOGLE_API_KEY` | (none) | Google Gemini API key |
+
+> **Tip:** You can configure LLM providers in the web UI under **Settings** without editing `.env`.
+
+### PostgreSQL (Docker)
+
+| Variable | Default | Description |
+|---|---|---|
+| `POSTGRES_USER` | `uacai` | Database username |
+| `POSTGRES_PASSWORD` | `changeme` | Database password. `start.sh` auto-generates on first run. |
+| `POSTGRES_DB` | `uacai` | Database name |
+
+> **Important:** PostgreSQL only reads `POSTGRES_PASSWORD` on first data directory initialization. If you change the password after the database volume already exists, you must either drop the volume (`docker compose down -v`) and recreate, or change the password inside PostgreSQL manually.
+
+### Authentication
+
+| Variable | Default | Description |
+|---|---|---|
+| `AUTH_PROVIDER` | `local` | `local` (DB-backed) or `supabase` |
+| `ADMIN_EMAIL` | `admin@uac-ai.local` | Seed admin email (created on startup) |
+| `ADMIN_PASSWORD` | `changeme` | Seed admin password |
+| `ADMIN_USERNAME` | `admin` | Seed admin display name |
+
+### Storage Paths (Local Dev Only)
+
+These are overridden by Docker volumes when running via Docker Compose:
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATABASE_PATH` | `~/.uac-ai/uac-ai.db` | SQLite path (used when `DATABASE_URL` is not set) |
+| `UPLOAD_FOLDER` | `~/.uac-ai/uploads` | Temp upload directory |
+| `CHROMA_PERSIST_DIR` | `~/.uac-ai/chroma` | ChromaDB vector store |
+
+### Application Settings
+
+| Variable | Default | Description |
+|---|---|---|
+| `FLASK_ENV` | `development` | `development`, `testing`, or `production` |
+| `FLASK_DEBUG` | `true` | Enable debug mode (set `false` in production) |
+| `CORS_ORIGINS` | `http://localhost:3000,...` | Comma-separated allowed origins |
+| `REDIS_URL` | (none) | Redis connection string (app degrades gracefully without it) |
+
+See [.env.example](.env.example) for the complete list.
+
+### Recommended LLM Models
+
+| Model | Size | Best For |
+|---|---|---|
+| `llama3.1` | 8B | General analysis, good balance |
+| `deepseek-r1:7b` | 7B | Complex reasoning, anomaly detection |
+| `mistral` | 7B | Fast responses, quick Q&A |
+| `codellama` | 13B | Script and code review |
+
+---
+
 ## Deployment
 
-### Docker Compose (recommended)
+### Docker Compose (Recommended)
 
 The stack consists of 5 services:
 
-| Container | Image | Purpose |
+| Container | Port | Purpose |
 |---|---|---|
-| `database` | PostgreSQL 16 + pgvector | Primary data store |
-| `redis` | Redis 7 Alpine | Caching layer |
-| `backend` | Python 3.11 / Flask | REST API, parsing, RAG, analysis |
-| `frontend` | Node 18 → Nginx | React SPA |
-| `mcp-server` | Python 3.12 / FastMCP | MCP tool bridge for AI assistants |
+| `uac-ai-database` | `127.0.0.1:5432` | PostgreSQL 16 + pgvector |
+| `uac-ai-redis` | `127.0.0.1:6379` | Redis 7 Alpine (caching) |
+| `uac-ai-backend` | `0.0.0.0:5001` | Flask API (Gunicorn + gevent) |
+| `uac-ai-frontend` | `0.0.0.0:3000` | React SPA (Nginx) |
+| `uac-ai-mcp` | `0.0.0.0:8811` | MCP server (FastMCP SSE) |
+
+All services have health checks and automatic restart policies. The backend waits for healthy database and Redis before starting.
 
 ```bash
 # Start everything
@@ -102,14 +194,25 @@ The stack consists of 5 services:
 # View logs
 docker compose logs -f
 
+# View specific service logs
+docker compose logs -f backend
+
 # Stop
 docker compose down
 
-# Stop and remove data
+# Stop and remove all data (databases, uploads, etc.)
 docker compose down -v
 ```
 
-### Local Development (no Docker)
+### Volumes
+
+| Volume | Purpose |
+|---|---|
+| `postgres_data` | PostgreSQL database files |
+| `redis_data` | Redis append-only file |
+| `uac-ai-data` | Uploaded archives, parsed data, ChromaDB vectors |
+
+### Local Development (No Docker)
 
 #### Backend
 
@@ -139,56 +242,142 @@ pip install -e .
 uac-ai-mcp                 # Starts stdio transport by default
 ```
 
-### Environment Variables
+---
 
-Copy `.env.example` to `.env` and customize. Key settings:
+## Agent Deployment
 
-| Variable | Default | Description |
+UAC AI includes a lightweight Go agent that runs on Linux endpoints for remote artifact collection.
+
+### Agent Binaries
+
+Pre-built binaries are in `agent/bin/`:
+- `uac-agent-linux-amd64` — x86_64
+- `uac-agent-linux-arm64` — ARM64
+
+To rebuild from source (requires Go 1.21+):
+
+```bash
+cd agent && make build-all
+```
+
+Or use the `--rebuild-agent` flag with `start.sh`:
+
+```bash
+./start.sh --rebuild-agent
+```
+
+### Deploying an Agent
+
+1. **Register the agent** in the web UI → **Agents** page → **Register Agent**
+2. **Copy the bootstrap script** shown after registration
+3. **Run the bootstrap script** on the target endpoint — it downloads the agent binary and creates the config
+4. The agent connects via WebSocket (preferred) or REST polling
+
+### Agent Configuration
+
+The agent reads from `/opt/uac-ai-agent/agent.conf` (JSON):
+
+```json
+{
+  "agent_id": "generated-uuid",
+  "api_key": "generated-key",
+  "backend_url": "http://your-server:5001",
+  "ws_endpoint": "/ws/agent",
+  "heartbeat_interval": 30,
+  "uac_profile": "ir_triage",
+  "work_dir": "/opt/uac-ai-agent/work",
+  "max_concurrency": 5,
+  "tls_skip_verify": false
+}
+```
+
+| Field | Default | Description |
 |---|---|---|
-| `SECRET_KEY` | auto-generated | Flask session signing key |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
-| `OLLAMA_MODEL` | `llama3.1` | Default LLM model |
-| `AUTH_PROVIDER` | `local` | `local` (DB) or `supabase` |
-| `DATABASE_URL` | (none → SQLite) | PostgreSQL connection string |
-| `REDIS_URL` | (none) | Redis connection string |
-| `ADMIN_EMAIL` | `admin@uac-ai.local` | Initial admin account |
-| `ADMIN_PASSWORD` | `changeme` | Initial admin password |
-| `OPENAI_API_KEY` | (none) | Optional: OpenAI provider |
-| `ANTHROPIC_API_KEY` | (none) | Optional: Claude provider |
-| `GOOGLE_API_KEY` | (none) | Optional: Gemini provider |
-
-See [.env.example](.env.example) for the full list including RAG tuning, embedding model, and cleanup settings.
-
-### Recommended LLM Models
-
-| Model | Size | Best For |
-|---|---|---|
-| `llama3.1` | 8B | General analysis, good balance |
-| `deepseek-r1:7b` | 7B | Complex reasoning, anomaly detection |
-| `mistral` | 7B | Fast responses, quick Q&A |
-| `codellama` | 13B | Script and code review |
+| `agent_id` | (required) | Unique agent identifier |
+| `api_key` | (required) | Authentication key |
+| `backend_url` | (required) | UAC AI backend URL |
+| `ws_endpoint` | `/ws/agent` | WebSocket path |
+| `heartbeat_interval` | `30` | Heartbeat interval (seconds) |
+| `uac_profile` | `ir_triage` | Default UAC collection profile |
+| `work_dir` | `/opt/uac-ai-agent/work` | Working directory for artifacts |
+| `max_concurrency` | `5` | Max concurrent command goroutines |
+| `encryption_key` | (none) | Base64 AES-256 key for payload encryption |
+| `tls_skip_verify` | `false` | Skip TLS verification (dev only) |
+| `allowed_collect_paths` | (all) | Restrict file collection to these paths |
 
 ---
 
-## MCP Server
+## MCP Integration
 
-The MCP (Model Context Protocol) server exposes UAC AI's full capabilities as tools that AI assistants can call. Compatible with Claude Desktop, VS Code Copilot, and any MCP client.
+The MCP (Model Context Protocol) server exposes **60+ tools** that let AI assistants interact with UAC AI directly — querying sessions, dispatching commands to agents, extracting IOCs, running MITRE scans, and more.
 
-### Connecting
+### Transport Modes
 
-**VS Code (`.vscode/mcp.json`)**:
+| Transport | Use Case | How It Works |
+|---|---|---|
+| **SSE** | Docker deployment / remote | Runs on port 8811; clients connect over HTTP |
+| **stdio** | Local / standalone | Client launches the process directly |
+
+Docker Compose starts the MCP server in SSE mode automatically. For stdio, install the package locally:
+
+```bash
+cd mcp-server
+pip install -e .
+```
+
+### VS Code (GitHub Copilot)
+
+Create `.vscode/mcp.json` in your workspace:
+
+**SSE transport (Docker):**
+
 ```json
 {
   "servers": {
     "uac-ai": {
       "type": "sse",
-      "url": "http://localhost:8811/sse"
+      "url": "http://localhost:8811/sse",
+      "headers": {
+        "Authorization": "Bearer ${input:mcp_auth_token}"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "id": "mcp_auth_token",
+      "type": "promptString",
+      "description": "MCP Auth Token (from .env MCP_AUTH_TOKEN)",
+      "password": true
+    }
+  ]
+}
+```
+
+**stdio transport (local dev):**
+
+```json
+{
+  "servers": {
+    "uac-ai": {
+      "command": "uac-ai-mcp",
+      "env": {
+        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
+        "UAC_AI_USERNAME": "admin@uac-ai.local",
+        "UAC_AI_PASSWORD": "your-password"
+      }
     }
   }
 }
 ```
 
-**Claude Desktop (`claude_desktop_config.json`)**:
+### Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+**stdio transport (recommended):**
+
 ```json
 {
   "mcpServers": {
@@ -204,42 +393,111 @@ The MCP (Model Context Protocol) server exposes UAC AI's full capabilities as to
 }
 ```
 
-### Tool Reference
+**SSE transport (remote Docker server):**
+
+```json
+{
+  "mcpServers": {
+    "uac-ai": {
+      "type": "sse",
+      "url": "http://your-server:8811/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### Gemini CLI
+
+Add to `~/.gemini/settings.json`:
+
+**stdio transport:**
+
+```json
+{
+  "mcpServers": {
+    "uac-ai": {
+      "command": "uac-ai-mcp",
+      "env": {
+        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
+        "UAC_AI_USERNAME": "admin@uac-ai.local",
+        "UAC_AI_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+**SSE transport (remote Docker server):**
+
+```json
+{
+  "mcpServers": {
+    "uac-ai": {
+      "type": "sse",
+      "url": "http://your-server:8811/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### MCP Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `UAC_AI_API_URL` | `http://backend:5000/api/v1` | Backend API URL |
+| `UAC_AI_API_TOKEN` | (none) | Pre-existing JWT for auth |
+| `UAC_AI_USERNAME` | (none) | Username for auto-login |
+| `UAC_AI_PASSWORD` | (none) | Password for auto-login |
+| `MCP_TRANSPORT` | `stdio` | Transport: `stdio` or `sse` |
+| `SSE_PORT` | `8811` | Port for SSE transport |
+| `MCP_AUTH_TOKEN` | (none) | Bearer token for SSE endpoint security |
+| `REDIS_URL` | (none) | Redis URL for session caching |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+> **Note:** `MCP_AUTH_TOKEN` protects the MCP SSE endpoint itself. This is separate from `UAC_AI_USERNAME`/`UAC_AI_PASSWORD` which authenticate with the backend API. Set `MCP_AUTH_TOKEN` in your `.env` and pass the same value in the client's `Authorization` header.
+
+### MCP Authentication
+
+The MCP server authenticates with the backend in one of two ways:
+1. **Token-based:** Set `UAC_AI_API_TOKEN` to a valid JWT — the server uses it directly
+2. **Credential-based:** Set `UAC_AI_USERNAME` and `UAC_AI_PASSWORD` — the server calls the login endpoint automatically
+
+### Quick Reference
+
+| Client | Config File | Recommended Transport |
+|---|---|---|
+| VS Code (Copilot) | `.vscode/mcp.json` | SSE (Docker) or stdio (local) |
+| Claude Desktop | `claude_desktop_config.json` | stdio (local) or SSE (remote) |
+| Gemini CLI | `~/.gemini/settings.json` | stdio (local) or SSE (remote) |
+
+### Tool Categories
 
 The MCP server provides **60+ tools** across 14 modules:
 
 | Module | Tools | Description |
 |---|---|---|
-| **auth** | `uac_login`, `uac_get_current_user`, `uac_logout` | Authentication |
-| **investigations** | `uac_list_investigations`, `uac_get_investigation`, `uac_create_investigation`, `uac_update_investigation`, `uac_delete_investigation` | Case management |
-| **sessions** | `uac_get_session`, `uac_get_session_status`, `uac_get_session_artifacts`, `uac_get_session_stats`, `uac_delete_session` | Session lifecycle |
-| **parse** | `uac_upload_archive` | Upload and parse UAC archives |
-| **analyze** | `uac_query`, `uac_agent_query`, `uac_get_summary`, `uac_detect_anomalies`, `uac_get_suggestions`, `uac_context_preview`, `uac_extract_iocs_legacy` | AI analysis and querying |
-| **timeline** | `uac_get_timeline`, `uac_get_timeline_stats`, `uac_correlate_events` | Event timeline |
-| **search** | `uac_search_chunks`, `uac_get_search_filters`, `uac_get_chunk` | Full-text search |
-| **entities** | `uac_list_entities`, `uac_search_entity`, `uac_graph_neighbors`, `uac_graph_path`, `uac_graph_stats`, `uac_kill_chain_analysis` | Entity graph |
-| **iocs** | `uac_extract_iocs`, `uac_correlate_iocs`, `uac_ioc_summary`, `uac_search_iocs`, `uac_get_file_hashes`, `uac_compare_hashes`, `uac_search_hash` | IOC management |
-| **mitre** | `uac_mitre_scan`, `uac_get_mitre_mappings`, `uac_get_mitre_summary`, `uac_compare_sessions` | MITRE ATT&CK mapping |
-| **export** | `uac_export_session`, `uac_get_export_formats` | Data export |
-| **config** | `uac_get_processing_settings`, `uac_update_processing_settings`, `uac_get_providers`, `uac_test_provider`, `uac_get_models`, `uac_set_model`, + more | Platform configuration |
-| **chats** | `uac_list_chats`, `uac_create_chat`, `uac_get_chat`, `uac_update_chat`, `uac_delete_chat`, `uac_send_message`, `uac_get_chat_messages` | Chat management |
-| **resources** | 4 MCP resources + 2 prompt templates | Reference data & prompts |
+| **auth** | 3 | Login, current user, logout |
+| **investigations** | 5 | CRUD + list investigations |
+| **sessions** | 5 | Session lifecycle management |
+| **parse** | 1 | Upload and parse UAC archives |
+| **analyze** | 7 | AI queries, summaries, anomaly detection |
+| **timeline** | 3 | Event timeline and correlation |
+| **search** | 3 | Full-text chunk search |
+| **entities** | 6 | Entity graph, neighbors, kill chain |
+| **iocs** | 7 | IOC extraction, correlation, hash search |
+| **mitre** | 4 | MITRE ATT&CK scanning and mapping |
+| **export** | 2 | Session data export |
+| **config** | 9+ | Provider, model, and processing settings |
+| **chats** | 7 | Chat management and messaging |
+| **agents** | 10+ | Agent management, command dispatch, playbooks |
 
-### MCP Resources
-
-| Resource URI | Description |
-|---|---|
-| `uac://reference/mitre-tactics` | MITRE ATT&CK tactic list |
-| `uac://reference/artifact-types` | UAC artifact type taxonomy |
-| `uac://reference/entity-types` | Supported entity types |
-| `uac://reference/ioc-types` | IOC categories |
-
-### MCP Prompts
-
-| Prompt | Description |
-|---|---|
-| `forensic_triage` | Structured triage of a parsed session |
-| `ioc_investigation` | Deep-dive IOC investigation workflow |
+See [docs/mcp-server.md](docs/mcp-server.md) for the complete tool reference.
 
 ---
 
@@ -359,11 +617,11 @@ All endpoints are prefixed with `/api/v1`.
 │  Browser — React 18 SPA (Vite + TypeScript + Tailwind)               │
 │  Dashboard · Query · Timeline · Search · Analysis · Export · Settings │
 └──────────────────────────┬────────────────────────────────────────────┘
-                           │  REST API + SSE
+                           │  REST API + WebSocket
                            ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Flask API (:5001)                                                    │
-│  Auth · Parsing · RAG · Analysis · Timeline · Search · Export        │
+│  Flask API (:5001)   Gunicorn + gevent                                │
+│  Auth · Parsing · RAG · Analysis · Timeline · Search · Agents        │
 ├──────────────────────────────────────────────────────────────────────┤
 │  Service Layer                                                        │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌──────────────┐  │
@@ -371,16 +629,18 @@ All endpoints are prefixed with `/api/v1`.
 │  │ (tar.gz→DB) │ │ (Tiered)    │ │ (Multi-step)│ │ Extractors   │  │
 │  └─────────────┘ └─────────────┘ └─────────────┘ └──────────────┘  │
 └────────┬──────────────┬──────────────┬──────────────┬────────────────┘
+         │              │              │              │
          ▼              ▼              ▼              ▼
   ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
   │ PostgreSQL │ │  ChromaDB  │ │   Ollama   │ │   Redis    │
   │  + pgvector│ │  (Vectors) │ │   (LLM)    │ │  (Cache)   │
   └────────────┘ └────────────┘ └────────────┘ └────────────┘
-                                                      │
-                                               ┌──────┴──────┐
-                                               │  MCP Server  │
-                                               │  (:8811 SSE) │
-                                               └──────────────┘
+         ▲                                            │
+         │                                     ┌──────┴──────┐
+  ┌──────┴──────┐                              │  MCP Server  │
+  │  Go Agents  │←── WebSocket/REST ──────────→│  (:8811 SSE) │
+  │  (Endpoints)│                              └──────────────┘
+  └─────────────┘
 ```
 
 ### Project Structure
@@ -390,11 +650,13 @@ uac-ai/
 ├── backend/                 # Flask API server
 │   ├── app/
 │   │   ├── models/          # SQLAlchemy models
-│   │   ├── routes/          # API endpoints (11 blueprints)
+│   │   ├── routes/          # API endpoints (14 blueprints)
 │   │   ├── services/        # Business logic
-│   │   │   └── llm_providers/  # Ollama, OpenAI, Claude, Gemini
+│   │   │   ├── llm_providers/  # Ollama, OpenAI, Claude, Gemini
+│   │   │   └── auth_providers/ # Local, Supabase
 │   │   └── __init__.py      # App factory
 │   ├── config.py            # Configuration
+│   ├── gunicorn.conf.py     # Gunicorn worker config
 │   ├── requirements.txt
 │   └── run.py               # Entry point
 ├── frontend/                # React SPA
@@ -406,9 +668,14 @@ uac-ai/
 │   │   └── types/           # TypeScript types
 │   ├── vite.config.ts
 │   └── package.json
+├── agent/                   # Go agent for remote endpoints
+│   ├── cmd/agent/main.go    # Agent entry point
+│   ├── internal/            # Config, transport, worker
+│   ├── bin/                 # Pre-built binaries (amd64 + arm64)
+│   └── Makefile
 ├── mcp-server/              # MCP tool server
 │   ├── uac_ai_mcp/
-│   │   ├── tools/           # 14 tool modules
+│   │   ├── tools/           # 14 tool modules (60+ tools)
 │   │   ├── server.py        # FastMCP server setup
 │   │   ├── client.py        # Backend HTTP client
 │   │   └── config.py        # MCP config
@@ -416,18 +683,23 @@ uac-ai/
 │   └── Dockerfile
 ├── database/                # PostgreSQL init scripts
 │   ├── Dockerfile
-│   └── init/
+│   └── init/                # Schema, extensions, seed data, RBAC
+├── docs/                    # Documentation
+│   ├── how-to-use.md
+│   ├── mcp-server.md
+│   └── intrusion-simulation.md
 ├── docker-compose.yml       # Full stack orchestration
 ├── Dockerfile.backend
 ├── Dockerfile.frontend
 ├── start.sh                 # One-command deploy script
-├── .env.example             # Environment template
-└── docs/                    # Documentation
+└── .env.example             # Environment template
 ```
 
 ---
 
 ## Usage Guide
+
+See [docs/how-to-use.md](docs/how-to-use.md) for a detailed walkthrough. Quick summary:
 
 ### 1. Create an Investigation
 
@@ -482,7 +754,5 @@ Go to **Export** to download results in JSONL (Timesketch), JSON, Markdown, or C
 <div align="center">
 
 Made with ❤️ for the DFIR community
-
-</div>
 
 </div>

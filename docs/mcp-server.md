@@ -46,24 +46,61 @@ Environment variables:
 
 ## Client Configuration
 
-### VS Code Copilot
+### VS Code (GitHub Copilot)
 
 Create `.vscode/mcp.json` in your workspace:
+
+**Option A — SSE transport (Docker deployment):**
 
 ```json
 {
   "servers": {
     "uac-ai": {
       "type": "sse",
-      "url": "http://localhost:8811/sse"
+      "url": "http://localhost:8811/sse",
+      "headers": {
+        "Authorization": "Bearer ${input:mcp_auth_token}"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "id": "mcp_auth_token",
+      "type": "promptString",
+      "description": "MCP Auth Token (from .env MCP_AUTH_TOKEN)",
+      "password": true
+    }
+  ]
+}
+```
+
+**Option B — stdio transport (standalone / local dev):**
+
+```json
+{
+  "servers": {
+    "uac-ai": {
+      "command": "uac-ai-mcp",
+      "env": {
+        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
+        "UAC_AI_USERNAME": "admin@uac-ai.local",
+        "UAC_AI_PASSWORD": "your-password"
+      }
     }
   }
 }
 ```
 
+> **Note:** The `MCP_AUTH_TOKEN` value is in your `.env` file. If running via Docker, the MCP server uses SSE on port 8811 by default.
+
 ### Claude Desktop
 
-Add to `claude_desktop_config.json`:
+Add to your `claude_desktop_config.json`:
+
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+**Option A — stdio transport (recommended):**
 
 ```json
 {
@@ -78,6 +115,74 @@ Add to `claude_desktop_config.json`:
     }
   }
 }
+```
+
+> Requires the MCP server installed locally: `cd mcp-server && pip install -e .`
+
+**Option B — SSE transport (remote Docker server):**
+
+```json
+{
+  "mcpServers": {
+    "uac-ai": {
+      "type": "sse",
+      "url": "http://your-server:8811/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### Gemini CLI
+
+Add the MCP server to your Gemini CLI settings file (`~/.gemini/settings.json`):
+
+**Option A — stdio transport:**
+
+```json
+{
+  "mcpServers": {
+    "uac-ai": {
+      "command": "uac-ai-mcp",
+      "env": {
+        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
+        "UAC_AI_USERNAME": "admin@uac-ai.local",
+        "UAC_AI_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+> Requires the MCP server installed locally: `cd mcp-server && pip install -e .`
+
+**Option B — SSE transport (remote Docker server):**
+
+```json
+{
+  "mcpServers": {
+    "uac-ai": {
+      "type": "sse",
+      "url": "http://your-server:8811/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### Quick Reference
+
+| Client | Config File | Recommended Transport |
+|---|---|---|
+| VS Code | `.vscode/mcp.json` | SSE (Docker) or stdio (local) |
+| Claude Desktop | `claude_desktop_config.json` | stdio (local) or SSE (remote) |
+| Gemini CLI | `~/.gemini/settings.json` | stdio (local) or SSE (remote) |
+
+> **Tip:** For all stdio configurations, you need the MCP server package installed locally (`pip install -e .` from the `mcp-server/` directory). For SSE configurations, the server must be running (Docker handles this automatically).
 ```
 
 ## Tool Reference
