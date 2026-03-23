@@ -78,12 +78,21 @@ if [ -z "$MCP_AUTH_TOKEN" ] || [ "$MCP_AUTH_TOKEN" = "changeme_generate_token" ]
 fi
 
 if [ -z "$POSTGRES_PASSWORD" ] || [ "$POSTGRES_PASSWORD" = "changeme" ]; then
-    echo "Generating POSTGRES_PASSWORD..."
-    NEW_PG_PASS=$(openssl rand -hex 16)
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$NEW_PG_PASS/" .env
+    # Only generate a new password if the postgres volume doesn't exist yet.
+    # PostgreSQL only reads POSTGRES_PASSWORD on first init; changing it later
+    # causes a mismatch between .env and the data in the volume.
+    PG_VOLUME_EXISTS=$(docker volume ls -q --filter name=uac-ai-with-ui_postgres_data 2>/dev/null || true)
+    if [ -z "$PG_VOLUME_EXISTS" ]; then
+        echo "Generating POSTGRES_PASSWORD..."
+        NEW_PG_PASS=$(openssl rand -hex 16)
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$NEW_PG_PASS/" .env
+        else
+            sed -i "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$NEW_PG_PASS/" .env
+        fi
     else
-        sed -i "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$NEW_PG_PASS/" .env
+        echo "WARNING: Postgres volume already exists — keeping current POSTGRES_PASSWORD."
+        echo "         If authentication fails, run: docker compose down -v  (destroys data)"
     fi
 fi
 
