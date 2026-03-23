@@ -600,31 +600,51 @@ Add to your `claude_desktop_config.json`:
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
-**stdio transport (recommended):**
+**Option A — Docker (recommended, zero extra setup):**
+
 ```json
 {
   "mcpServers": {
     "uac-ai": {
-      "command": "uac-ai-mcp",
+      "command": "docker",
+      "args": ["exec", "-i", "uac-ai-mcp", "uac-ai-proxy"]
+    }
+  }
+}
+```
+
+> The proxy bridges stdio↔SSE inside the container. Auth is handled automatically.
+
+**Option B — Remote server (`pip install uac-ai-mcp`):**
+
+```bash
+pip install uac-ai-mcp
+```
+
+```json
+{
+  "mcpServers": {
+    "uac-ai": {
+      "command": "uac-ai-proxy",
+      "args": ["http://your-server:8811/sse"],
       "env": {
-        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
-        "UAC_AI_USERNAME": "admin@uac-ai.local",
-        "UAC_AI_PASSWORD": "your-password"
+        "MCP_AUTH_TOKEN": "YOUR_MCP_AUTH_TOKEN"
       }
     }
   }
 }
 ```
 
-**SSE transport (remote Docker server):**
+**Option C — npx (alternative, requires Node.js):**
+
 ```json
 {
   "mcpServers": {
     "uac-ai": {
-      "type": "sse",
-      "url": "http://your-server:8811/sse",
-      "headers": {
-        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/mcp-proxy", "http://your-server:8811/sse"],
+      "env": {
+        "MCP_HEADERS": "{\"Authorization\": \"Bearer YOUR_MCP_AUTH_TOKEN\"}"
       }
     }
   }
@@ -635,16 +655,49 @@ Add to your `claude_desktop_config.json`:
 
 Add to `~/.gemini/settings.json`:
 
-**stdio transport:**
+**Option A — Docker (recommended, zero extra setup):**
+
 ```json
 {
   "mcpServers": {
     "uac-ai": {
-      "command": "uac-ai-mcp",
+      "command": "docker",
+      "args": ["exec", "-i", "uac-ai-mcp", "uac-ai-proxy"]
+    }
+  }
+}
+```
+
+**Option B — Remote server (`pip install uac-ai-mcp`):**
+
+```bash
+pip install uac-ai-mcp
+```
+
+```json
+{
+  "mcpServers": {
+    "uac-ai": {
+      "command": "uac-ai-proxy",
+      "args": ["http://your-server:8811/sse"],
       "env": {
-        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
-        "UAC_AI_USERNAME": "admin@uac-ai.local",
-        "UAC_AI_PASSWORD": "your-password"
+        "MCP_AUTH_TOKEN": "YOUR_MCP_AUTH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+**Option C — npx (alternative, requires Node.js):**
+
+```json
+{
+  "mcpServers": {
+    "uac-ai": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/mcp-proxy", "http://your-server:8811/sse"],
+      "env": {
+        "MCP_HEADERS": "{\"Authorization\": \"Bearer YOUR_MCP_AUTH_TOKEN\"}"
       }
     }
   }
@@ -657,15 +710,15 @@ The MCP server authenticates with the backend in one of two ways:
 - **Token-based:** Set `UAC_AI_API_TOKEN` to a valid JWT
 - **Credential-based:** Set `UAC_AI_USERNAME` and `UAC_AI_PASSWORD` — the server logs in automatically
 
-> **Note:** For SSE transport, `MCP_AUTH_TOKEN` protects the MCP endpoint itself (set in `.env`). This is separate from the backend credentials above.
+> **Note:** For SSE transport, `MCP_AUTH_TOKEN` protects the MCP endpoint itself (set in `.env`). This is separate from the backend credentials above. The `uac-ai-proxy` reads this from the `MCP_AUTH_TOKEN` env var.
 
 ### Quick Reference
 
 | Client | Config File | Recommended Transport |
 |---|---|---|
-| VS Code (Copilot) | `.vscode/mcp.json` | SSE (Docker) or stdio (local) |
-| Claude Desktop | `claude_desktop_config.json` | stdio (local) or SSE (remote) |
-| Gemini CLI | `~/.gemini/settings.json` | stdio (local) or SSE (remote) |
+| VS Code (Copilot) | `.vscode/mcp.json` | SSE (direct) |
+| Claude Desktop | `claude_desktop_config.json` | `uac-ai-proxy` (stdio↔SSE) |
+| Gemini CLI | `~/.gemini/settings.json` | `uac-ai-proxy` (stdio↔SSE) |
 
 See [mcp-server.md](mcp-server.md) for the complete tool reference and environment variables.
 

@@ -202,30 +202,27 @@ echo "────────────────────────�
 echo "  Claude Desktop — claude_desktop_config.json"
 echo "───────────────────────────────────────────────────────────────"
 echo ""
-echo "  Option A — stdio transport (requires local install):"
+echo "  Option A — Docker (recommended, zero extra setup):"
 cat <<EOF
   {
     "mcpServers": {
       "uac-ai": {
-        "command": "uac-ai-mcp",
-        "env": {
-          "UAC_AI_URL": "${BASE_URL}:5001",
-          "UAC_AI_TOKEN": "${MCP_AUTH_TOKEN}"
-        }
+        "command": "docker",
+        "args": ["exec", "-i", "uac-ai-mcp", "uac-ai-proxy"]
       }
     }
   }
 EOF
 echo ""
-echo "  Option B — SSE transport (remote / Docker):"
+echo "  Option B — Remote server (pip install uac-ai-mcp):"
 cat <<EOF
   {
     "mcpServers": {
       "uac-ai": {
-        "type": "sse",
-        "url": "${BASE_URL}:8811/sse",
-        "headers": {
-          "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
+        "command": "uac-ai-proxy",
+        "args": ["${REMOTE_URL:-$BASE_URL}:8811/sse"],
+        "env": {
+          "MCP_AUTH_TOKEN": "${MCP_AUTH_TOKEN}"
         }
       }
     }
@@ -236,30 +233,27 @@ echo "────────────────────────�
 echo "  Gemini CLI — ~/.gemini/settings.json"
 echo "───────────────────────────────────────────────────────────────"
 echo ""
-echo "  Option A — stdio transport (requires local install):"
+echo "  Option A — Docker (recommended, zero extra setup):"
 cat <<EOF
   {
     "mcpServers": {
       "uac-ai": {
-        "command": "uac-ai-mcp",
-        "env": {
-          "UAC_AI_URL": "${BASE_URL}:5001",
-          "UAC_AI_TOKEN": "${MCP_AUTH_TOKEN}"
-        }
+        "command": "docker",
+        "args": ["exec", "-i", "uac-ai-mcp", "uac-ai-proxy"]
       }
     }
   }
 EOF
 echo ""
-echo "  Option B — SSE transport (remote / Docker):"
+echo "  Option B — Remote server (pip install uac-ai-mcp):"
 cat <<EOF
   {
     "mcpServers": {
       "uac-ai": {
-        "type": "sse",
-        "url": "${BASE_URL}:8811/sse",
-        "headers": {
-          "Authorization": "Bearer ${MCP_AUTH_TOKEN}"
+        "command": "uac-ai-proxy",
+        "args": ["${REMOTE_URL:-$BASE_URL}:8811/sse"],
+        "env": {
+          "MCP_AUTH_TOKEN": "${MCP_AUTH_TOKEN}"
         }
       }
     }

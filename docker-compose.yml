@@ -139,6 +139,8 @@ services:
     container_name: uac-ai-mcp
     environment:
       UAC_AI_API_URL: http://backend:5000/api/v1
+      UAC_AI_USERNAME: ${ADMIN_EMAIL:-admin@uac-ai.local}
+      UAC_AI_PASSWORD: ${ADMIN_PASSWORD:-changeme}
       MCP_TRANSPORT: sse
       SSE_PORT: "8811"
       REDIS_URL: redis://redis:6379/0

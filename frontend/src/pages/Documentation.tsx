@@ -750,30 +750,46 @@ function McpSection() {
         <code className="bg-bg-elevated px-1 rounded text-brand-primary">%APPDATA%\Claude\claude_desktop_config.json</code>
       </DocNote>
       <DocParagraph>
-        <strong className="text-text-primary">Option A — stdio transport (recommended):</strong>
+        <strong className="text-text-primary">Option A — Docker (recommended, zero extra setup):</strong>
+      </DocParagraph>
+      <DocParagraph>
+        If the UAC AI stack is running via Docker on the same machine. The proxy bridges stdio↔SSE inside the container — no local Python or Node.js needed.
       </DocParagraph>
       <DocCode>{`{
   "mcpServers": {
     "uac-ai": {
-      "command": "uac-ai-mcp",
+      "command": "docker",
+      "args": ["exec", "-i", "uac-ai-mcp", "uac-ai-proxy"]
+    }
+  }
+}`}</DocCode>
+      <DocParagraph>
+        <strong className="text-text-primary">Option B — Remote server (pip install uac-ai-mcp):</strong>
+      </DocParagraph>
+      <DocParagraph>
+        For connecting to a remote UAC AI instance. Install with <code className="bg-bg-elevated px-1 rounded text-brand-primary">pip install uac-ai-mcp</code> — it includes both the server and the <code className="bg-bg-elevated px-1 rounded text-brand-primary">uac-ai-proxy</code> CLI.
+      </DocParagraph>
+      <DocCode>{`{
+  "mcpServers": {
+    "uac-ai": {
+      "command": "uac-ai-proxy",
+      "args": ["http://your-server:8811/sse"],
       "env": {
-        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
-        "UAC_AI_USERNAME": "admin@uac-ai.local",
-        "UAC_AI_PASSWORD": "your-password"
+        "MCP_AUTH_TOKEN": "YOUR_MCP_AUTH_TOKEN"
       }
     }
   }
 }`}</DocCode>
       <DocParagraph>
-        <strong className="text-text-primary">Option B — SSE transport (remote Docker server):</strong>
+        <strong className="text-text-primary">Option C — npx (alternative, requires Node.js):</strong>
       </DocParagraph>
       <DocCode>{`{
   "mcpServers": {
     "uac-ai": {
-      "type": "sse",
-      "url": "http://your-server:8811/sse",
-      "headers": {
-        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/mcp-proxy", "http://your-server:8811/sse"],
+      "env": {
+        "MCP_HEADERS": "{\\"Authorization\\": \\"Bearer YOUR_MCP_AUTH_TOKEN\\"}"
       }
     }
   }
@@ -785,30 +801,43 @@ function McpSection() {
         <code className="bg-bg-elevated px-1 rounded text-brand-primary">~/.gemini/settings.json</code>:
       </DocParagraph>
       <DocParagraph>
-        <strong className="text-text-primary">Option A — stdio transport:</strong>
+        <strong className="text-text-primary">Option A — Docker (recommended, zero extra setup):</strong>
       </DocParagraph>
       <DocCode>{`{
   "mcpServers": {
     "uac-ai": {
-      "command": "uac-ai-mcp",
+      "command": "docker",
+      "args": ["exec", "-i", "uac-ai-mcp", "uac-ai-proxy"]
+    }
+  }
+}`}</DocCode>
+      <DocParagraph>
+        <strong className="text-text-primary">Option B — Remote server (pip install uac-ai-mcp):</strong>
+      </DocParagraph>
+      <DocParagraph>
+        Install with <code className="bg-bg-elevated px-1 rounded text-brand-primary">pip install uac-ai-mcp</code>, then configure:
+      </DocParagraph>
+      <DocCode>{`{
+  "mcpServers": {
+    "uac-ai": {
+      "command": "uac-ai-proxy",
+      "args": ["http://your-server:8811/sse"],
       "env": {
-        "UAC_AI_API_URL": "http://localhost:5001/api/v1",
-        "UAC_AI_USERNAME": "admin@uac-ai.local",
-        "UAC_AI_PASSWORD": "your-password"
+        "MCP_AUTH_TOKEN": "YOUR_MCP_AUTH_TOKEN"
       }
     }
   }
 }`}</DocCode>
       <DocParagraph>
-        <strong className="text-text-primary">Option B — SSE transport (remote Docker server):</strong>
+        <strong className="text-text-primary">Option C — npx (alternative, requires Node.js):</strong>
       </DocParagraph>
       <DocCode>{`{
   "mcpServers": {
     "uac-ai": {
-      "type": "sse",
-      "url": "http://your-server:8811/sse",
-      "headers": {
-        "Authorization": "Bearer YOUR_MCP_AUTH_TOKEN"
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/mcp-proxy", "http://your-server:8811/sse"],
+      "env": {
+        "MCP_HEADERS": "{\\"Authorization\\": \\"Bearer YOUR_MCP_AUTH_TOKEN\\"}"
       }
     }
   }
@@ -838,20 +867,22 @@ function McpSection() {
         <li><strong className="text-text-primary">Token-based:</strong> Set <code className="bg-bg-elevated px-1 rounded text-brand-primary">UAC_AI_API_TOKEN</code> to a valid JWT — the server uses it directly</li>
         <li><strong className="text-text-primary">Credential-based:</strong> Set <code className="bg-bg-elevated px-1 rounded text-brand-primary">UAC_AI_USERNAME</code> and <code className="bg-bg-elevated px-1 rounded text-brand-primary">UAC_AI_PASSWORD</code> — the server calls the login endpoint automatically</li>
       </ul>
-      <DocNote type="warning">
-        For SSE mode, the <code className="bg-bg-elevated px-1 rounded text-brand-primary">MCP_AUTH_TOKEN</code> environment
-        variable protects the MCP endpoint itself. This is separate from the backend credentials above.
-        Set it in your <code className="bg-bg-elevated px-1 rounded text-brand-primary">.env</code> file and pass the same
-        value in the client&apos;s Authorization header.
+      <DocNote type="tip">
+        <code className="bg-bg-elevated px-1 rounded text-brand-primary">uac-ai-proxy</code> is a transparent SSE↔stdio
+        bridge included in the <code className="bg-bg-elevated px-1 rounded text-brand-primary">uac-ai-mcp</code> package.
+        For local Docker, use <code className="bg-bg-elevated px-1 rounded text-brand-primary">docker exec</code>. For
+        remote servers, install the package with <code className="bg-bg-elevated px-1 rounded text-brand-primary">pip install uac-ai-mcp</code>.
+        The <code className="bg-bg-elevated px-1 rounded text-brand-primary">MCP_AUTH_TOKEN</code> env var protects
+        the SSE endpoint and is separate from the backend credentials above.
       </DocNote>
 
       <DocSubheading>Quick Reference</DocSubheading>
       <DocTable
         headers={["Client", "Config File", "Recommended Transport"]}
         rows={[
-          ["VS Code (Copilot)", ".vscode/mcp.json", "SSE (Docker) or stdio (local)"],
-          ["Claude Desktop", "claude_desktop_config.json", "stdio (local) or SSE (remote)"],
-          ["Gemini CLI", "~/.gemini/settings.json", "stdio (local) or SSE (remote)"],
+          ["VS Code (Copilot)", ".vscode/mcp.json", "SSE (direct)"],
+          ["Claude Desktop", "claude_desktop_config.json", "uac-ai-proxy (stdio↔SSE)"],
+          ["Gemini CLI", "~/.gemini/settings.json", "uac-ai-proxy (stdio↔SSE)"],
         ]}
       />
     </div>

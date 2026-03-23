@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/your-org/uac-ai"
+Repository = "https://github.com/paulpol25/uac-ai-parser-web"
 
 [project.optional-dependencies]
 dev = [
@@ -40,6 +40,7 @@ dev = [
 
 [project.scripts]
 uac-ai-mcp = "uac_ai_mcp.__main__:main"
+uac-ai-proxy = "uac_ai_mcp.proxy:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["uac_ai_mcp"]
