@@ -105,10 +105,12 @@ docker compose exec -T backend flask db upgrade 2>/dev/null || echo "Migrations 
 
 echo ""
 echo "Seeding admin user..."
+# Note: _seed_admin() already runs inside create_app(), so we just trigger it.
+# Using LocalAuthProvider.hash_password (not werkzeug) to match the login flow.
 docker compose exec -T backend python -c "
 from app import create_app
 from app.models import db, User
-from werkzeug.security import generate_password_hash
+from app.services.auth_providers.local_provider import LocalAuthProvider
 import os
 
 app = create_app('production')
@@ -117,12 +119,13 @@ with app.app_context():
     password = os.environ.get('ADMIN_PASSWORD', 'changeme')
     user = User.query.filter_by(email=email).first()
     if not user:
-        user = User(username='admin', email=email, password_hash=generate_password_hash(password))
+        user = User(username='admin', email=email, password_hash=LocalAuthProvider.hash_password(password), role='admin')
         db.session.add(user)
         db.session.commit()
         print(f'Admin user created: {email}')
     else:
-        user.password_hash = generate_password_hash(password)
+        user.password_hash = LocalAuthProvider.hash_password(password)
+        user.role = 'admin'
         db.session.commit()
         print(f'Admin user password updated: {email}')
 " 2>/dev/null || echo "Admin seeding may have already run"

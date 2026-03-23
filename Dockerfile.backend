@@ -63,6 +63,7 @@ WORKDIR /app/backend
 # worker does not block requests handled by the other workers.
 # WebSocket middleware is applied in run.py (wraps Flask WSGI app).
 CMD exec gunicorn \
+    --config gunicorn.conf.py \
     --bind 0.0.0.0:5000 \
     --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker \
     --workers ${GUNICORN_WORKERS:-2} \
