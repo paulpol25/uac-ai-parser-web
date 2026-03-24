@@ -88,7 +88,6 @@ services:
       - "0.0.0.0:5001:5000"
     volumes:
       - uac-ai-data:/app/data
-      - ./agent/bin:/app/agent/bin:ro
     depends_on:
       database:
         condition: service_healthy
