@@ -411,22 +411,6 @@ pip install uac-ai-mcp
 }
 ```
 
-**Option C — npx (alternative, requires Node.js):**
-
-```json
-{
-  "mcpServers": {
-    "uac-ai": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-proxy", "http://your-server:8811/sse"],
-      "env": {
-        "MCP_HEADERS": "{\"Authorization\": \"Bearer YOUR_MCP_AUTH_TOKEN\"}"
-      }
-    }
-  }
-}
-```
-
 ### Gemini CLI
 
 Add to `~/.gemini/settings.json`:
@@ -458,22 +442,6 @@ pip install uac-ai-mcp
       "args": ["http://your-server:8811/sse"],
       "env": {
         "MCP_AUTH_TOKEN": "YOUR_MCP_AUTH_TOKEN"
-      }
-    }
-  }
-}
-```
-
-**Option C — npx (alternative, requires Node.js):**
-
-```json
-{
-  "mcpServers": {
-    "uac-ai": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-proxy", "http://your-server:8811/sse"],
-      "env": {
-        "MCP_HEADERS": "{\"Authorization\": \"Bearer YOUR_MCP_AUTH_TOKEN\"}"
       }
     }
   }

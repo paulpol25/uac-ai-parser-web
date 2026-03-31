@@ -17,17 +17,14 @@ class ClaudeProvider(LLMProvider):
     provider_type = ProviderType.CLAUDE
     
     DEFAULT_MODELS = [
-        "claude-sonnet-4-20250514",
-        "claude-3-5-sonnet-20241022",
-        "claude-3-5-haiku-20241022",
-        "claude-3-opus-20240229",
-        "claude-3-sonnet-20240229",
-        "claude-3-haiku-20240307",
+       "claude-opus-4.6",
+       "claude-sonnet-4.6",
+       "claude-haiku-4.6",
     ]
     
     def __init__(self, config: ProviderConfig):
         if not config.model:
-            config.model = "claude-3-5-sonnet-20241022"
+            config.model = "claude-sonnet-4.6"
         super().__init__(config)
         self._client: Optional[any] = None
     

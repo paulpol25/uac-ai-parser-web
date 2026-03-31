@@ -142,21 +142,6 @@ pip install uac-ai-mcp
 
 > Install the `uac-ai-mcp` package once — it includes both the server and the `uac-ai-proxy` CLI.
 
-**Option C — npx (alternative, requires Node.js):**
-
-```json
-{
-  "mcpServers": {
-    "uac-ai": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-proxy", "http://your-server:8811/sse"],
-      "env": {
-        "MCP_HEADERS": "{\"Authorization\": \"Bearer YOUR_MCP_AUTH_TOKEN\"}"
-      }
-    }
-  }
-}
-```
 
 ### Gemini CLI
 
@@ -195,22 +180,6 @@ pip install uac-ai-mcp
 }
 ```
 
-**Option C — npx (alternative, requires Node.js):**
-
-```json
-{
-  "mcpServers": {
-    "uac-ai": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-proxy", "http://your-server:8811/sse"],
-      "env": {
-        "MCP_HEADERS": "{\"Authorization\": \"Bearer YOUR_MCP_AUTH_TOKEN\"}"
-      }
-    }
-  }
-}
-```
-
 ### Quick Reference
 
 | Client | Config File | Recommended Transport |
@@ -222,7 +191,6 @@ pip install uac-ai-mcp
 > **Tip:** `uac-ai-proxy` is a transparent SSE↔stdio bridge included in the `uac-ai-mcp` package. For local Docker, use `docker exec`. For remote servers, install the package with `pip install uac-ai-mcp`.
 
 > **Tip:** The MCP Bridge (`mcp-bridge/`) is the easiest way to connect Claude Desktop and Gemini CLI — run `setup.sh` and follow the instructions. For SSE, the Docker MCP server must be running (port 8811).
-```
 
 ## Tool Reference
 

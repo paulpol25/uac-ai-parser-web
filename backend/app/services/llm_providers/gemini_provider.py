@@ -17,16 +17,14 @@ class GeminiProvider(LLMProvider):
     provider_type = ProviderType.GEMINI
     
     DEFAULT_MODELS = [
-        "gemini-2.0-flash-exp",
-        "gemini-1.5-pro",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-8b",
-        "gemini-1.0-pro",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-8b",
     ]
     
     def __init__(self, config: ProviderConfig):
         if not config.model:
-            config.model = "gemini-1.5-flash"
+            config.model = "gemini-2.5-flash"
         super().__init__(config)
         self._client: Optional[any] = None
         self._model_instance: Optional[any] = None

@@ -82,13 +82,13 @@ class ProviderFactory:
                 },
                 "gemini": {
                     "api_key": os.environ.get("GEMINI_API_KEY", ""),
-                    "model": "gemini-1.5-flash",
+                    "model": "gemini-2.5-flash",
                     "temperature": 0.7,
                     "max_tokens": 4096,
                 },
                 "claude": {
                     "api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-4.6-sonnet",
                     "temperature": 0.7,
                     "max_tokens": 4096,
                 },

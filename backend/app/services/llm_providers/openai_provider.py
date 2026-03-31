@@ -20,18 +20,16 @@ class OpenAIProvider(LLMProvider):
     provider_type = ProviderType.OPENAI
     
     DEFAULT_MODELS = [
-        "gpt-4o",
-        "gpt-4o-mini",
-        "gpt-4-turbo",
-        "gpt-4",
-        "gpt-3.5-turbo",
+        "gpt-5.4-mini",
+        "gpt-5.4",
+        "gpt-5",
     ]
     
     def __init__(self, config: ProviderConfig):
         if not config.base_url:
             config.base_url = "https://api.openai.com/v1"
         if not config.model:
-            config.model = "gpt-4o-mini"
+            config.model = "gpt-5.4-mini"
         super().__init__(config)
         self._client: Optional[any] = None
     
