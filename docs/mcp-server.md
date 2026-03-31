@@ -96,13 +96,10 @@ Create `.vscode/mcp.json` in your workspace:
 ### Claude Desktop
 
 Add to your `claude_desktop_config.json`:
-
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 **Option A — Docker (recommended, zero extra setup):**
-
-If the UAC AI stack is running via Docker on the same machine. The proxy connects to the SSE server running inside the container — no local Python or Node.js needed.
 
 ```json
 {
@@ -119,11 +116,11 @@ If the UAC AI stack is running via Docker on the same machine. The proxy connect
 
 **Option B — Remote server (`pip install uac-ai-mcp`):**
 
-For connecting to a remote UAC AI instance from your local machine:
+On your local machine: 
 
 ```bash
-pip install uac-ai-mcp
-# or: pipx install uac-ai-mcp
+cd mcp-server
+pip install -e .
 ```
 
 ```json
@@ -140,6 +137,7 @@ pip install uac-ai-mcp
 }
 ```
 
+
 > Install the `uac-ai-mcp` package once — it includes both the server and the `uac-ai-proxy` CLI.
 
 
@@ -147,7 +145,25 @@ pip install uac-ai-mcp
 
 Add the MCP server to your Gemini CLI settings file (`~/.gemini/settings.json`):
 
-**Option A — Docker (recommended, zero extra setup):**
+**Option A — Direct SSE (recommended, zero extra setup):**
+
+Add to `~/.gemini/settings.json`:
+
+```json
+"mcpServers": {
+       "uac-ai": {
+        "type": "sse",
+        "url": "http://0.0.0.0:8811/sse", 
+        "headers": {
+          "Authorization": "Bearer MCP_TOKEN"
+        }
+      }
+    }
+```
+
+**Option B — Docker (recommended, zero extra setup):**
+
+Add to `~/.gemini/settings.json`:
 
 ```json
 {
@@ -160,10 +176,13 @@ Add the MCP server to your Gemini CLI settings file (`~/.gemini/settings.json`):
 }
 ```
 
-**Option B — Remote server (`pip install uac-ai-mcp`):**
+**Option C — Remote server (`install uac-ai-mcp`):**
+
+On your local machine: 
 
 ```bash
-pip install uac-ai-mcp
+cd mcp-server
+pip install -e .
 ```
 
 ```json
