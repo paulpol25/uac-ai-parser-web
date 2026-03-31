@@ -393,8 +393,11 @@ Add to your `claude_desktop_config.json`:
 
 **Option B — Remote server (`pip install uac-ai-mcp`):**
 
+On your local machine: 
+
 ```bash
-pip install uac-ai-mcp
+cd mcp-server
+pip install -e .
 ```
 
 ```json
@@ -412,10 +415,25 @@ pip install uac-ai-mcp
 ```
 
 ### Gemini CLI
+**Option A — Direct SSE (recommended, zero extra setup):**
 
 Add to `~/.gemini/settings.json`:
 
-**Option A — Docker (recommended, zero extra setup):**
+```json
+"mcpServers": {
+       "uac-ai": {
+        "type": "sse",
+        "url": "http://0.0.0.0:8811/sse", 
+        "headers": {
+          "Authorization": "Bearer MCP_TOKEN"
+        }
+      }
+    }
+```
+
+**Option B — Docker (recommended, zero extra setup):**
+
+Add to `~/.gemini/settings.json`:
 
 ```json
 {
@@ -428,10 +446,13 @@ Add to `~/.gemini/settings.json`:
 }
 ```
 
-**Option B — Remote server (`pip install uac-ai-mcp`):**
+**Option C — Remote server (`install uac-ai-mcp`):**
+
+On your local machine: 
 
 ```bash
-pip install uac-ai-mcp
+cd mcp-server
+pip install -e .
 ```
 
 ```json
